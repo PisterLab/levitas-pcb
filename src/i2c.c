@@ -18,6 +18,12 @@
 #include "pico/binary_info.h"
 #include "hardware/i2c.h"
 
+    // accelerometer I2C pins
+//#define ACCEL_I2C i2c1
+//#define ACCEL_I2C I2C_INSTANCE(1)
+#define LEVITAS_ACCEL_SDA_PIN 2
+#define LEVITAS_ACCEL_SCL_PIN 3
+
 // I2C reserves some addresses for special purposes. We exclude these from the scan.
 // These are any addresses of the form 000 0xxx or 111 1xxx
 bool reserved_addr(uint8_t addr) {
@@ -43,7 +49,8 @@ void scan_bus(){
         if (reserved_addr(addr)) {
             ret = PICO_ERROR_GENERIC;
         } else {
-            ret = i2c_read_blocking(i2c_default, addr, &rxdata, 1, false);
+            //ret = 0;
+            ret = i2c_read_blocking(I2C_INSTANCE(1), addr, &rxdata, 1, false);
         }
 
         printf(ret < 0 ? "." : "@");
@@ -59,29 +66,38 @@ int main() {
     // USB serial port defaults to 115200 baud
     stdio_init_all();
 
-#if !defined(i2c_default) || !defined(PICO_DEFAULT_I2C_SDA_PIN) || !defined(PICO_DEFAULT_I2C_SCL_PIN)
-#warning i2c/bus_scan example requires a board with I2C pins
-    puts("Default I2C pins were not defined");
-#else
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
     // This example will use I2C0 on the default SDA and SCL pins (GP4, GP5 on a Pico)
-    i2c_init(i2c_default, 100 * 1000); // i2c standard mode
+    //i2c_init(i2c_default, 100 * 1000); // i2c standard mode
     //i2c_init(i2c_default, 400 * 1000); // i2c fast mode
+    i2c_init(I2C_INSTANCE(1), 100 * 1000); // i2c standard mode
     // PICO_DEFAULT_I2C_INSTANCE
-    gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
-    gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+    //gpio_set_function(PICO_DEFAULT_I2C_SDA_PIN, GPIO_FUNC_I2C);
+    //gpio_set_function(PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C);
+    //gpio_pull_up(PICO_DEFAULT_I2C_SDA_PIN);
+    //gpio_pull_up(PICO_DEFAULT_I2C_SCL_PIN);
+
+    gpio_set_function(LEVITAS_ACCEL_SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(LEVITAS_ACCEL_SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(LEVITAS_ACCEL_SDA_PIN);
+    gpio_pull_up(LEVITAS_ACCEL_SCL_PIN);
 
     // Make the I2C pin information available to "picotool info --all"
-    bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
+    //bi_decl(bi_2pins_with_func(PICO_DEFAULT_I2C_SDA_PIN, PICO_DEFAULT_I2C_SCL_PIN, GPIO_FUNC_I2C));
     // i2c default: 0
     // GP4 (pcb pin 6): i2c0 sda default
     // GP5 (pcb pin 7): i2c0 scl default
 
+    // pico pins 4/5 = GPIO 2/3, which is I2C1 not I2C0
     while(true){
-        scan_bus(); // should report BH1750 at address 0x23
-        sleep_ms(2000);
+        gpio_put(PICO_DEFAULT_LED_PIN, true);
+        sleep_ms(500);
+        gpio_put(PICO_DEFAULT_LED_PIN, false);
+        sleep_ms(500);
+        printf("LeviTAS v202501-A\n");
+        //scan_bus(); // should report BH1750 at address 0x23
     }
 
     // connect to ADXL345 accelerometer to test i2c bus
@@ -130,8 +146,6 @@ int main() {
         //printf("Read light data: %x %x \n", lux_data[0], lux_data[1]);
     }
     */
-
-#endif
 
     return 0;
 }
