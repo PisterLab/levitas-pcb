@@ -22,13 +22,15 @@ pico_sdk_init()
 # define local project files
 add_executable(levitas
     #src/main.c
-    src/i2c.c
+    #src/i2c.c
+    src/mpu6050_i2c.c
 )
 
 # add libraries (pico_stdlib for general use, etc)
 target_link_libraries(levitas
     pico_stdlib
     hardware_i2c
+    hardware_spi
 )
 
 # UART on pins 0/1 is enabled by default, disable it
