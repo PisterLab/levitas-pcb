@@ -65,6 +65,13 @@ int main() {
     // USB serial port defaults to 115200 baud
     stdio_init_all();
 
+    // hopefully reduce 3.3V bus noise by setting
+    // Pico dev board regular to PWM mode
+#define PICO_POWER_PIN 23
+    gpio_init(PICO_POWER_PIN);
+    gpio_set_dir(PICO_POWER_PIN, GPIO_OUT);
+    gpio_put(PICO_POWER_PIN, false);
+
     // Use I2C1 on pins 2/3 at 400kHz
     i2c_init(i2c_default, 400 * 1000);
     gpio_set_function(2, GPIO_FUNC_I2C);
