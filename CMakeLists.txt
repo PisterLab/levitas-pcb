@@ -23,7 +23,8 @@ pico_sdk_init()
 add_executable(levitas
     #src/main.c
     #src/i2c.c
-    src/mpu6050_i2c.c
+    #src/mpu6050_i2c.c
+    src/spi.c
 )
 
 # add libraries (pico_stdlib for general use, etc)
