@@ -27,10 +27,9 @@ void HVAWG_reset(){
     HVAWG_init_command();
     spi_write_blocking(spi1, buf_reset, 3);
 
-    // set internal reference to always on, 2.5V
-    // (TODO: CHANGE THIS TO 4.096V WHEN SAFE)
-    // REF = 0111 0101 x x = 0x750000
-    uint8_t buf_ref[] = {0x75, 0x00, 0x00};
+    // set internal reference to always on, 4.096V
+    // REF = 0111 0111 x x = 0x770000
+    uint8_t buf_ref[] = {0x77, 0x00, 0x00};
     HVAWG_init_command();
     spi_write_blocking(spi1, buf_ref, 3);
 
@@ -55,6 +54,9 @@ void HVAWG_write(bool high){
     // CODEn = 0000(dac-select) (data) (data)xxxx
     // CODEn_LOAD_ALL = 0010(dac-select) (data) (data)xxxx
 
+    // DAC selection (see table 3):
+    // 0x00, 0x01, 0x02, 0x03 (or 0x04, 0x08 for all DACs)
+
     if(high){
         // CODEn = 00000001 11111111 11110000 = 0x01fff0
         // CODEn = 00000010 11111111 11110000 = 0x02fff0
@@ -62,37 +64,39 @@ void HVAWG_write(bool high){
         // CODEn_LOAD_ALL = 00101000 11111111 11110000 = 0x28fff0
 
         HVAWG_init_command();
-        uint8_t buf1[] = {0x01, 0xff, 0xf0};
+        uint8_t buf1[] = {0x00, 0xff, 0xf0};
         spi_write_blocking(spi1, buf1, 3);
 
         HVAWG_init_command();
-        uint8_t buf2[] = {0x02, 0xff, 0xf0};
+        //uint8_t buf2[] = {0x01, 0xff, 0xf0};
+        uint8_t buf2[] = {0x01, 0x00, 0x00};
         spi_write_blocking(spi1, buf2, 3);
 
         HVAWG_init_command();
-        uint8_t buf3[] = {0x04, 0xff, 0xf0};
+        uint8_t buf3[] = {0x02, 0xff, 0xf0};
         spi_write_blocking(spi1, buf3, 3);
 
         HVAWG_init_command();
-        uint8_t buf4[] = {0x28, 0xff, 0xf0};
+        //uint8_t buf4[] = {0x23, 0xff, 0xf0};
+        uint8_t buf4[] = {0x23, 0x00, 0x00};
         spi_write_blocking(spi1, buf4, 3);
 
     }else{
 
         HVAWG_init_command();
-        uint8_t buf1[] = {0x01, 0x00, 0x00};
+        uint8_t buf1[] = {0x00, 0x00, 0x00};
         spi_write_blocking(spi1, buf1, 3);
 
         HVAWG_init_command();
-        uint8_t buf2[] = {0x02, 0x00, 0x00};
+        uint8_t buf2[] = {0x01, 0x00, 0x00};
         spi_write_blocking(spi1, buf2, 3);
 
         HVAWG_init_command();
-        uint8_t buf3[] = {0x04, 0x00, 0x00};
+        uint8_t buf3[] = {0x02, 0x00, 0x00};
         spi_write_blocking(spi1, buf3, 3);
 
         HVAWG_init_command();
-        uint8_t buf4[] = {0x28, 0x00, 0x00};
+        uint8_t buf4[] = {0x23, 0x00, 0x00};
         spi_write_blocking(spi1, buf4, 3);
 
     }
