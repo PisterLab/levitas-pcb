@@ -24,15 +24,19 @@ add_executable(levitas
     #src/main.c
     #src/i2c.c
     #src/mpu6050_i2c.c
-    src/fdc2112_i2c.c
+    #src/fdc2112_i2c.c
     #src/spi.c
+    src/test.c
 )
+
+pico_generate_pio_header(levitas ${CMAKE_CURRENT_LIST_DIR}/src/test.pio)
 
 # add libraries (pico_stdlib for general use, etc)
 target_link_libraries(levitas
     pico_stdlib
     hardware_i2c
     hardware_spi
+    hardware_pio
 )
 
 # UART on pins 0/1 is enabled by default, disable it
