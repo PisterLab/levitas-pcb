@@ -26,10 +26,14 @@ add_executable(levitas
     #src/mpu6050_i2c.c
     #src/fdc2112_i2c.c
     #src/spi.c
-    src/test.c
+
+    src/fdc2112_pio_i2c.c
+    src/pio_i2c.c
+    src/pio_i2c.h
 )
 
-pico_generate_pio_header(levitas ${CMAKE_CURRENT_LIST_DIR}/src/test.pio)
+# take PIO file and generate a header file (to be included in C files)
+pico_generate_pio_header(levitas ${CMAKE_CURRENT_LIST_DIR}/src/pio_i2c.pio)
 
 # add libraries (pico_stdlib for general use, etc)
 target_link_libraries(levitas

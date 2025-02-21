@@ -1,0 +1,238 @@
+; Part of a library to run I2C master from a PIO state machine.
+; (use with pio_i2c.h and pio_i2c.c)
+;
+; Originally from (then heavily commented)
+; https://github.com/raspberrypi/pico-examples/tree/master/pio/i2c
+; Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+; SPDX-License-Identifier: BSD-3-Clause
+
+; use version 0 of PIO assembly language
+.pio_version 0
+
+; =======================================
+
+; start a new program with name "pio_i2c"
+.program pio_i2c
+
+; set up side-set:
+; - 1 side-set bit
+; - side command is optional (-1 delay bit)
+; - use side set values to change a pin direction (i.e., 1=output, 0=input) (elsewhere set to SCL pin)
+; - have 5-1-1 = 3 delay bits remaining
+.side_set 1 opt pindirs
+
+; Make the state machine work as follows:
+; - main processor puts 16-bit instructions into state machine FIFO
+; - these instructions are autopulled into the state machine OSR
+; - process these instructions one at a time. Can do three things:
+;   - if first 6 bits = x > 0, indicate next x+1 instructions are commands
+;   - if instruction is a command, execute as a state machine instruction
+;   - else, it is data. 1 bit = whether to ignore NAK,
+;       write 8 bits, write NAK bit; simultaneously read 8 bits
+;     (where writing 0 drives SDA down and 1 lets pullup bring high,
+;      so reading is accomplished by writing 0xff)
+;     (when writing, can disable autopush in external code)
+;     (every bit takes 32 state machine cycles)
+; - if unexpected NAK, raise interrupt
+
+; Original documentation:
+;
+; TX Encoding:
+; | 15:10 | 9     | 8:1  | 0   |
+; | Instr | Final | Data | NAK |
+;
+; If Instr has a value n > 0, then this FIFO word has no
+; data payload, and the next n + 1 words will be executed as instructions.
+; Otherwise, shift out the 8 data bits, followed by the ACK bit.
+;
+; The Instr mechanism allows stop/start/repstart sequences to be programmed
+; by the processor, and then carried out by the state machine at defined points
+; in the datastream.
+;
+; The "Final" field should be set for the final byte in a transfer.
+; This tells the state machine to ignore a NAK: if this field is not
+; set, then any NAK will cause the state machine to halt and interrupt.
+;
+; Autopull should be enabled, with a threshold of 16.
+; Autopush should be enabled, with a threshold of 8.
+; The TX FIFO should be accessed with halfword writes, to ensure
+; the data is immediately available in the OSR.
+;
+; Pin mapping:
+; - Input pin 0 is SDA, 1 is SCL (if clock stretching used)
+; - Jump pin is SDA
+; - Side-set pin 0 is SCL
+; - Set pin 0 is SDA
+; - OUT pin 0 is SDA
+; - SCL must be SDA + 1 (for wait mapping)
+;
+; The OE outputs should be inverted in the system IO controls!
+; (It's possible for the inversion to be done in this program,
+; but costs 2 instructions: 1 for inversion, and one to cope
+; with the side effect of the MOV on TX shift counter.)
+
+do_nack:
+    jmp y-- entry_point        ; Continue if NAK was expected
+    irq wait 0 rel             ; Otherwise stop, ask for help
+
+; send/receive a byte
+; (start with 25% SCL low, 50% SCL high, 25% SCL low, repeat)
+do_byte:
+    set x, 7                    ; start by reading/writing x+1=8 bits
+    mov isr, null               ; Set ISR and input shift counter to zero. This
+                                ; helps fix a race condition when autopush is
+                                ; disabled and re-enabled, which can leave the
+                                ; counter in an inconsistent state.
+bitloop:                        ; 32-cycle loop to read/write a bit
+    out pindirs, 1          [7] ; write bit to SDA (in order to read, send a 1 bit, which can be driven down by device)
+    ;nop             side 1 [2] ; (clock stretch; commented out)
+    ;wait 1 pin, 1          [4] ; (clock stretch; commented out)
+    nop              side 1 [7] ; SCL rising edge (use side-set to set SCL to output, thereby driving)
+    in pins, 1              [7] ; read a bit (automatically pushed to FIFO every 8 bits)
+    jmp x-- bitloop  side 0 [7] ; SCL falling edge
+
+                                ; now send/receive ACK/NAK
+    out pindirs, 1          [7] ; On reads, we provide the ACK.
+    nop              side 1 [7] ; SCL rising edge
+    wait 1 pin, 1           [7] ; Allow clock to be stretched
+    jmp pin do_nack  side 0 [2] ; Test SDA for ACK/NAK, fall through if ACK
+
+; state machine will be set to start executing here
+public entry_point:             ; "public" = make this label accessible as a #define to C code
+.wrap_target                    ; special label for hardware-accelerated loop
+                                ; autopull pulls 16 bits from FIFO into OSR
+    out x, 6                    ; put first 6 bits (number of instructions) into x register
+    out y, 1                    ; put bit into y register (NAK?)
+    jmp !x do_byte              ; this is a data record; go read/write a byte
+    out null, 32                ; discard remainder of OSR data (not needed)
+do_exec:                        ; the next x commands are instructions!
+    out exec, 16                ; get next command, execute as state machine instruction
+    jmp x-- do_exec             ; repeat n + 1 times (note: can execute a minimum of 2 instructions)
+.wrap                           ; hardware-accelerated 0-cycle unconditional jump to .wrap_target
+
+; =======================================
+
+% c-sdk {
+
+#include "hardware/clocks.h"
+#include "hardware/gpio.h"
+
+// set up a state machine to do I2C
+static inline void pio_i2c_program_init(PIO pio, uint sm, uint offset, uint pin_sda, uint pin_scl) {
+    assert(pin_scl == pin_sda + 1); // only required if using wait command to deal with clock stretching?
+
+    // ===== make list of state machine configuration settings =====
+
+    // get automatically generated pio_sm_config from pio_i2c assembly program
+    // (has side-set and wrap configured according to assembly program)
+    pio_sm_config c = pio_i2c_program_get_default_config(offset);
+
+    // IO mapping
+    sm_config_set_out_pins(&c, pin_sda, 1); // send OUT data to a single pin, namely, SDA
+    sm_config_set_set_pins(&c, pin_sda, 1); // send SET data to a single pin, namely, SDA
+    sm_config_set_in_pins(&c, pin_sda);
+    sm_config_set_sideset_pins(&c, pin_scl); // use sideset to change SCL pin (change pin direction)
+    sm_config_set_jmp_pin(&c, pin_sda); // tie JMP logic to the SDA pin
+
+    // automatically load 16 bits at a time from FIFO into OSR
+    sm_config_set_out_shift(&c, false, true, 16); // shift OSR left, autopull, shift 16 bits before autopull
+    // automatically load 8 bits at a time from FIFO from ISR
+    sm_config_set_in_shift(&c, false, true, 8);   // shift ISR left, autopush, shift 8 bits before autopush
+
+    // set state machine frequency (assuming assembly program is 32 state machine cycles long
+    // for 100kHz I2C frequency, divide system clock by (32 cycles) * (100kHz)
+    float div = (float)clock_get_hz(clk_sys) / (32 * 100000);
+    // for 400kHz I2C frequency, divide system clock by (32 cycles) * (400kHz)
+    //float div = (float)clock_get_hz(clk_sys) / (32 * 400000);
+    sm_config_set_clkdiv(&c, div);
+
+    // ===== set up GPIO =====
+
+    // if pindir = output -> 0 = high, 1 = low
+    // if pindir = input -> pullup brings pin high
+
+    // "Try to avoid glitching the bus while connecting the IOs. Get things set
+    // up so that pin is driven down when PIO asserts OE low, and pulled up otherwise."
+
+    // output high impedance
+    // input buffer disabled
+    // pulled low
+    // isolation latches latched
+
+    //gpio_set_function(pin_scl, GPIO_FUNC_PIO0);
+    //gpio_set_function(pin_sda, GPIO_FUNC_PIO0);
+
+    // pull pins high (probably redundant given external I2C pullup resistors)
+    gpio_pull_up(pin_scl);
+    gpio_pull_up(pin_sda);
+
+    // note: tried changing GPIO pad drive strength, didn't seem to do anything
+    // (see page RP2350 datasheet page 782 PADS_BANK0 bits 5:4)
+
+    // use state machine to set pins high and in output mode (1=high, 0=low)
+    uint32_t both_pins = (1u << pin_sda) | (1u << pin_scl);
+    pio_sm_set_pins_with_mask(pio, sm, both_pins, both_pins); // set pins high
+    pio_sm_set_pindirs_with_mask(pio, sm, both_pins, both_pins); // set output mode
+
+    pio_gpio_init(pio, pin_sda); // initialize
+    gpio_set_oeover(pin_sda, GPIO_OVERRIDE_INVERT); // invert PIO output/input signal
+    pio_gpio_init(pio, pin_scl); // initialize
+    gpio_set_oeover(pin_scl, GPIO_OVERRIDE_INVERT); // invert PIO output/input signal
+
+    // right now, the pins are in input mode:
+    // - PIO has both in output mode, which makes GPIO put them in input mode
+    // - PIO has both set high (only applies once put into output mode)
+
+    // set pins low (only applies once put into output mode)
+    pio_sm_set_pins_with_mask(pio, sm, 0, both_pins);
+
+    // RESULT:
+    // - if pins are set to output mode (1), the GPIO puts them in input mode and they are brought high via pullup
+    // - if pins are set to input mode (0), the GPIO puts them in output mode and they are driven low
+    // It is now easy to implement I2C. 
+
+    // ===== set up IRQ =====
+
+    // Clear IRQ flag before starting, and make sure flag doesn't actually
+    // assert a system-level interrupt (we're using it as a status flag)
+    pio_set_irq0_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);
+    pio_set_irq1_source_enabled(pio, (enum pio_interrupt_source) ((uint) pis_interrupt0 + sm), false);
+    pio_interrupt_clear(pio, sm);
+
+    // ===== load settings into PIO / state machine hardware =====
+
+    // load configuration c into the state machine and set it to begin at the given instruction offset:
+    //   (offset of instruction code in PIO register) + (the entry_point label defined in the assembly code)
+    pio_sm_init(pio, sm, offset + pio_i2c_offset_entry_point, &c);
+    // enable the state machine; make it start
+    pio_sm_set_enabled(pio, sm, true);
+}
+
+%}
+
+
+.program set_scl_sda
+.side_set 1 opt
+
+; Assemble a table of instructions which software can select from, and pass
+; into the FIFO, to issue START/STOP/RSTART. This isn't intended to be run as
+; a complete program.
+
+; TODO: implement clock stretch on STOP
+
+; each of these takes 8 cycles to run = 1/4 of an I2C clock cycle
+
+set pindirs, 0 side 0 [7] ; SCL = 0, SDA = 0
+set pindirs, 1 side 0 [7] ; SCL = 0, SDA = 1
+set pindirs, 0 side 1 [7] ; SCL = 1, SDA = 0
+set pindirs, 1 side 1 [7] ; SCL = 1, SDA = 1
+
+% c-sdk {
+// Define order of our instruction table
+enum {
+    I2C_SC0_SD0 = 0,
+    I2C_SC0_SD1,
+    I2C_SC1_SD0,
+    I2C_SC1_SD1
+};
+%}
