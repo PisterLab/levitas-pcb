@@ -22,13 +22,12 @@
 void pio_i2c_start(PIO pio, uint sm);
 void pio_i2c_stop(PIO pio, uint sm);
 void pio_i2c_restart_stop(PIO pio, uint sm);
-void pio_i2c_repstart(PIO pio, uint sm);
 
 bool pio_i2c_check_error(PIO pio, uint sm);
 void pio_i2c_resume_after_error(PIO pio, uint sm);
 
-// If I2C is ok, block and push data. Otherwise fall straight through.
-void pio_i2c_put_or_err(PIO pio, uint sm, uint16_t data);
+static void pio_i2c_put16_nocheck(PIO pio, uint sm, uint16_t data);
+static void pio_i2c_put16_or_err(PIO pio, uint sm, uint16_t data);
 uint8_t pio_i2c_get(PIO pio, uint sm);
 
 // ----------------------------------------------------------------------------
