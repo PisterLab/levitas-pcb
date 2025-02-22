@@ -121,7 +121,7 @@ int main() {
     while(true){
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
-        sleep_ms(10);
+        sleep_ms(1);
 
         // TODO: put printing/USB on second core
 

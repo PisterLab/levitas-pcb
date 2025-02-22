@@ -35,16 +35,6 @@ void pio_i2c_resume_after_error(PIO pio, uint sm) {
     pio_interrupt_clear(pio, sm);
 }
 
-// enable or disable state machine autopush
-// (when enabled, read data from I2C)
-// NOTE: POTENTIAL RACE CONDITION
-void pio_i2c_rx_enable(PIO pio, uint sm, bool en) {
-    if (en)
-        hw_set_bits(&pio->sm[sm].shiftctrl, PIO_SM0_SHIFTCTRL_AUTOPUSH_BITS);
-    else
-        hw_clear_bits(&pio->sm[sm].shiftctrl, PIO_SM0_SHIFTCTRL_AUTOPUSH_BITS);
-}
-
 // write a 16-bit value to FIFO (blocking), don't check for error
 static inline void pio_i2c_put16(PIO pio, uint sm, uint16_t data) {
     // wait if FIFO is full
@@ -131,8 +121,6 @@ int pio_i2c_write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *txbuf, uint 
     int err = 0;
     // emit start signal
     pio_i2c_start(pio, sm);
-    // temporarily disable reading data from I2C
-    pio_i2c_rx_enable(pio, sm, false); // TODO remove this
     // write data, expect ack, 8 bits (address + 0 for writing), don't send master ack
     pio_i2c_put16(pio, sm, (addr << 2) | 1u);
     while (len && !pio_i2c_check_error(pio, sm)) {
@@ -143,6 +131,9 @@ int pio_i2c_write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *txbuf, uint 
             // expect ack (except on last byte?), 8 bits, don't send master ack
             pio_i2c_put_or_err(pio, sm, (*txbuf++ << PIO_I2C_DATA_LSB) | ((len == 0) << PIO_I2C_FINAL_LSB) | 1u);
         }
+        if (!pio_sm_is_rx_fifo_empty(pio, sm)) {
+            (void)pio_i2c_get(pio, sm);
+        }
     }
     if(nostop){
         pio_i2c_restart_stop(pio, sm);
@@ -152,6 +143,8 @@ int pio_i2c_write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *txbuf, uint 
     }
     // wait until state machine is done sending everything
     pio_i2c_wait_idle(pio, sm);
+    while (!pio_sm_is_rx_fifo_empty(pio, sm))
+        (void)pio_i2c_get(pio, sm);
     // if hit an error, restart
     if (pio_i2c_check_error(pio, sm)) {
         err = -1;
@@ -165,8 +158,6 @@ int pio_i2c_read_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *rxbuf, uint l
     int err = 0;
     // emit start signal
     pio_i2c_start(pio, sm);
-    // enable reading data from I2C (data is being put into FIFO from state machine)
-    pio_i2c_rx_enable(pio, sm, true); // TODO remove this
     // empty data input FIFO
     while (!pio_sm_is_rx_fifo_empty(pio, sm))
         (void)pio_i2c_get(pio, sm);
