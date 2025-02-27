@@ -36,5 +36,6 @@ uint8_t pio_i2c_get(PIO pio, uint sm);
 uint pio_i2c_write_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *txbuf, uint len, bool nostop);
 uint pio_i2c_write_blocking_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint8_t addr, uint8_t *txbuf, uint len, bool nostop);
 uint pio_i2c_read_blocking(PIO pio, uint sm, uint8_t addr, uint8_t *rxbuf, uint len);
+uint pio_i2c_read_blocking_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint8_t addr, uint8_t *rxbuf0,  uint8_t *rxbuf1, uint8_t *rxbuf2, uint8_t *rxbuf3, uint len);
 
 #endif

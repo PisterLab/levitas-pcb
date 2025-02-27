@@ -464,3 +464,168 @@ uint pio_i2c_write_blocking_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, u
     }
     return err;
 }
+
+// Send an identical I2C read command to four PIO state machines.
+// This is `pio_i2c_read_blocking()` but addresses the state machines
+// simultaneously a la `pio_i2c_write_blocking_4()`.
+//
+// Data is returned in four separate buffers, one for each state machine.
+//
+// As with `pio_2c_write_blocking`, this function exits about 1.5ish
+// I2C clock periods before the state machine finishes sending the end
+// of the I2C stop signal.
+uint pio_i2c_read_blocking_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint8_t addr, uint8_t *rxbuf0,  uint8_t *rxbuf1, uint8_t *rxbuf2, uint8_t *rxbuf3, uint len) {
+
+    // When this function begins, we expect both TX and RX FIFO buffers to
+    // be empty, but in case a previous function messed up we'll fix that.
+    // (i.e., this is a bit of minor error correction)
+    if(!pio_sm_is_rx_fifo_empty(pio, sm0)){ pio_i2c_get(pio, sm0); }
+    if(!pio_sm_is_rx_fifo_empty(pio, sm1)){ pio_i2c_get(pio, sm1); }
+    if(!pio_sm_is_rx_fifo_empty(pio, sm2)){ pio_i2c_get(pio, sm2); }
+    if(!pio_sm_is_rx_fifo_empty(pio, sm3)){ pio_i2c_get(pio, sm3); }
+
+    // Next, send commands to execute an I2C start signal. These
+    // should not result in any returned bytes in the RX FIFO buffer.
+    pio_i2c_start(pio, sm0);
+    pio_i2c_start(pio, sm1);
+    pio_i2c_start(pio, sm2);
+    pio_i2c_start(pio, sm3);
+
+    // Track the number of things added and removed from PIO state machine
+    // FIFO buffers via the subset of 16-bit commands that read or write to
+    // the I2C bus. Note reads and writes both require sending a byte and
+    // receiving a byte (with the sent and received bytes being mere
+    // placeholders, respectively). We only want to read for now.
+    uint bytes_sent_0 = 0; uint bytes_received_0 = 0;
+    uint bytes_sent_1 = 0; uint bytes_received_1 = 0;
+    uint bytes_sent_2 = 0; uint bytes_received_2 = 0;
+    uint bytes_sent_3 = 0; uint bytes_received_3 = 0;
+
+    // Begin the I2C write by sending the device address.
+    // We format the 16-bit command for the PIO state machine as follows:
+    // (expect ack, 8 bits (address + 1 for read), don't send master ack)
+    pio_i2c_put16_or_err(pio, sm0, (addr << 2) | 3u);
+    pio_i2c_put16_or_err(pio, sm1, (addr << 2) | 3u);
+    pio_i2c_put16_or_err(pio, sm2, (addr << 2) | 3u);
+    pio_i2c_put16_or_err(pio, sm3, (addr << 2) | 3u);
+
+    // This should have triggered the PIO state machine byte write
+    // function. As a result, we should expect to receive a corresponding
+    // byte later (though its contents are useless).
+    bytes_sent_0 += 1;
+    bytes_sent_1 += 1;
+    bytes_sent_2 += 1;
+    bytes_sent_3 += 1;
+
+    // We can now read every other byte of data we're interested in.
+    // We submit a dummy byte and get a read I2C byte back.
+    // The PIO state machine runs much slower than the main microcontroller,
+    // so do this in a fast loop. Remember to take bytes out of the RX FIFO
+    // when they are ready so it doesn't become full and stall the state
+    // machine. We're done when we've received the last expected byte.
+    // (expected number of bytes = `len` plus one for the address byte)
+    while (bytes_sent_0 < len+1 || bytes_received_0 < len+1 ||
+           bytes_sent_1 < len+1 || bytes_received_1 < len+1 ||
+           bytes_sent_2 < len+1 || bytes_received_2 < len+1 ||
+           bytes_sent_3 < len+1 || bytes_received_3 < len+1) {
+
+        // don't get stuck in infinite loop if state machine raises
+        // error if an I2C ack fails; we'll reset the sensor, exit this
+        // function, then try again later
+        if(pio_i2c_check_error(pio, sm0)){ break; }
+        if(pio_i2c_check_error(pio, sm1)){ break; }
+        if(pio_i2c_check_error(pio, sm2)){ break; }
+        if(pio_i2c_check_error(pio, sm3)){ break; }
+
+        // write dummy byte
+        if (!pio_sm_is_tx_fifo_full(pio, sm1) && bytes_sent_0 < len+1) {
+            // (send 0xff (doesn't write to bus b/c pullup), expect NAK on final byte, otherwise have master send ack)
+            pio_i2c_put16_nocheck(pio, sm0, (0xffu << 1) | ((bytes_sent_0 < len) ? 0 : (1u << PIO_I2C_FINAL_LSB) | (1u << PIO_I2C_NAK_LSB)));
+            bytes_sent_0 += 1;
+        }
+        if (!pio_sm_is_tx_fifo_full(pio, sm1) && bytes_sent_1 < len+1) {
+            pio_i2c_put16_nocheck(pio, sm1, (0xffu << 1) | ((bytes_sent_1 < len) ? 0 : (1u << PIO_I2C_FINAL_LSB) | (1u << PIO_I2C_NAK_LSB)));
+            bytes_sent_1 += 1;
+        }
+        if (!pio_sm_is_tx_fifo_full(pio, sm2) && bytes_sent_2 < len+1) {
+            pio_i2c_put16_nocheck(pio, sm2, (0xffu << 1) | ((bytes_sent_2 < len) ? 0 : (1u << PIO_I2C_FINAL_LSB) | (1u << PIO_I2C_NAK_LSB)));
+            bytes_sent_2 += 1;
+        }
+        if (!pio_sm_is_tx_fifo_full(pio, sm3) && bytes_sent_3 < len+1) {
+            pio_i2c_put16_nocheck(pio, sm3, (0xffu << 1) | ((bytes_sent_3 < len) ? 0 : (1u << PIO_I2C_FINAL_LSB) | (1u << PIO_I2C_NAK_LSB)));
+            bytes_sent_3 += 1;
+        }
+
+        // read data byte
+        if (!pio_sm_is_rx_fifo_empty(pio, sm0) && bytes_received_0 < len+1) {
+            if(bytes_received_0 == 0){
+                pio_i2c_get(pio, sm0); // discard dummy byte produced by sending address
+            }else{
+                rxbuf0[bytes_received_0-1] = pio_i2c_get(pio, sm0);
+            }
+            bytes_received_0 += 1;
+        }
+        if (!pio_sm_is_rx_fifo_empty(pio, sm1) && bytes_received_1 < len+1) {
+            if(bytes_received_1 == 0){
+                pio_i2c_get(pio, sm1); // discard dummy byte produced by sending address
+            }else{
+                rxbuf1[bytes_received_1-1] = pio_i2c_get(pio, sm1);
+            }
+            bytes_received_1 += 1;
+        }
+        if (!pio_sm_is_rx_fifo_empty(pio, sm2) && bytes_received_2 < len+1) {
+            if(bytes_received_2 == 0){
+                pio_i2c_get(pio, sm2); // discard dummy byte produced by sending address
+            }else{
+                rxbuf2[bytes_received_2-1] = pio_i2c_get(pio, sm2);
+            }
+            bytes_received_2 += 1;
+        }
+        if (!pio_sm_is_rx_fifo_empty(pio, sm3) && bytes_received_3 < len+1) {
+            if(bytes_received_3 == 0){
+                pio_i2c_get(pio, sm3); // discard dummy byte produced by sending address
+            }else{
+                rxbuf3[bytes_received_3-1] = pio_i2c_get(pio, sm3);
+            }
+            bytes_received_3 += 1;
+        }
+    }
+
+    // Note that although we've already read from the bus, the state machine
+    // will be waiting about 42 of its cycles (each 1/32 of the I2C period,
+    // i.e., 13us for a 100kHz I2C clock or 3us for a 400kHz clock) to finish
+    // the I2C data including the nak/ack signal. This function can finish
+    // in the meantime.
+
+    // Finally, send an I2C stop condition in the same way we sent the
+    // start condition.
+    pio_i2c_stop(pio, sm0);
+    pio_i2c_stop(pio, sm1);
+    pio_i2c_stop(pio, sm2);
+    pio_i2c_stop(pio, sm3);
+
+    // If state machine hit an error at any previous point, restart it.
+    uint err = 0;
+    if (pio_i2c_check_error(pio, sm0)) {
+        err |= 0x01;
+        pio_i2c_resume_after_error(pio, sm0);
+        pio_i2c_stop(pio, sm0); // send a stop signal no matter `nostop`
+    }
+    if (pio_i2c_check_error(pio, sm1)) {
+        err |= 0x02;
+        pio_i2c_resume_after_error(pio, sm1);
+        pio_i2c_stop(pio, sm1); // send a stop signal no matter `nostop`
+    }
+    if (pio_i2c_check_error(pio, sm2)) {
+        err |= 0x04;
+        pio_i2c_resume_after_error(pio, sm2);
+        pio_i2c_stop(pio, sm2); // send a stop signal no matter `nostop`
+    }
+    if (pio_i2c_check_error(pio, sm3)) {
+        err |= 0x08;
+        pio_i2c_resume_after_error(pio, sm3);
+        pio_i2c_stop(pio, sm3); // send a stop signal no matter `nostop`
+    }
+    return err;
+}
+
