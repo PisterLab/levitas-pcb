@@ -538,7 +538,7 @@ uint pio_i2c_read_blocking_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, ui
         if(pio_i2c_check_error(pio, sm3)){ break; }
 
         // write dummy byte
-        if (!pio_sm_is_tx_fifo_full(pio, sm1) && bytes_sent_0 < len+1) {
+        if (!pio_sm_is_tx_fifo_full(pio, sm0) && bytes_sent_0 < len+1) {
             // (send 0xff (doesn't write to bus b/c pullup), expect NAK on final byte, otherwise have master send ack)
             pio_i2c_put16_nocheck(pio, sm0, (0xffu << 1) | ((bytes_sent_0 < len) ? 0 : (1u << PIO_I2C_FINAL_LSB) | (1u << PIO_I2C_NAK_LSB)));
             bytes_sent_0 += 1;
