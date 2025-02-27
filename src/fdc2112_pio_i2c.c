@@ -52,20 +52,6 @@ uint16_t fdc2112_read_register_nowrite(PIO pio, uint sm, uint8_t reg){
     return (((uint16_t)buf_data[0]) << 8) | ((uint16_t)buf_data[1]);
 }
 
-// read a 16-bit value from given register
-uint16_t fdc2112_read_register_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint8_t reg){
-    uint8_t buf_reg[1];
-    buf_reg[0] = reg;
-    uint8_t buf_data[] = {0x00, 0x00};
-    pio_i2c_write_blocking_4(pio, sm0, sm1, sm2, sm3, FDC2112_I2C_ADDR, buf_reg, 1, true); // shouldn't stop
-    pio_i2c_read_blocking(pio, sm0, FDC2112_I2C_ADDR, buf_data, 2);
-    pio_i2c_read_blocking(pio, sm1, FDC2112_I2C_ADDR, buf_data, 2);
-    pio_i2c_read_blocking(pio, sm2, FDC2112_I2C_ADDR, buf_data, 2);
-    pio_i2c_read_blocking(pio, sm3, FDC2112_I2C_ADDR, buf_data, 2);
-    // result is MSB then LSB byte
-    return (((uint16_t)buf_data[0]) << 8) | ((uint16_t)buf_data[1]);
-}
-
 static void fdc2112_startup(PIO pio, uint sm){
     // Chip is in sleep state by default and must be enabled.
     // To do so, set a bit in the CONFIG register, and set the
@@ -168,21 +154,19 @@ int main() {
 
         // TODO: put printing/USB on second core
 
-        //uint16_t c0 = fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0);
-
         // TODO: test if can read value without re-writing the register?
 
+        /*
         fdc2112_write_register(pio, sm0, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm1, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm2, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm3, FDC2112_REG_CONFIG, 0x1401);
-        /*
-        uint16_t c0 = fdc2112_read_register_nowrite(pio, sm0, FDC2112_REG_DATA_CH0);
-        uint16_t c1 = fdc2112_read_register_nowrite(pio, sm1, FDC2112_REG_DATA_CH0);
-        uint16_t c2 = fdc2112_read_register_nowrite(pio, sm2, FDC2112_REG_DATA_CH0);
-        uint16_t c3 = fdc2112_read_register_nowrite(pio, sm3, FDC2112_REG_DATA_CH0);
-        printf("Data: 0x%02x%02x 0x%02x%02x 0x%02x%02x 0x%02x%02x\n", (c0>>8), (c0&0xff), (c1>>8), (c1&0xff), (c2>>8), (c2&0xff), (c3>>8), (c3&0xff));
         */
+        uint16_t c0 = fdc2112_read_register(pio, sm0, FDC2112_REG_DATA_CH0);
+        uint16_t c1 = fdc2112_read_register(pio, sm1, FDC2112_REG_DATA_CH0);
+        uint16_t c2 = fdc2112_read_register(pio, sm2, FDC2112_REG_DATA_CH0);
+        uint16_t c3 = fdc2112_read_register(pio, sm3, FDC2112_REG_DATA_CH0);
+        printf("Data: 0x%02x%02x 0x%02x%02x 0x%02x%02x 0x%02x%02x\n", (c0>>8), (c0&0xff), (c1>>8), (c1&0xff), (c2>>8), (c2&0xff), (c3>>8), (c3&0xff));
     }
 
     return 0;
