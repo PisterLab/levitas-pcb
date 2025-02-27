@@ -85,9 +85,8 @@ do_byte:
                                 ; counter in an inconsistent state.
 bitloop:                        ; 32-cycle loop to read/write a bit
     out pindirs, 1          [7] ; write bit to SDA (in order to read, send a 1 bit, which can be driven down by device)
-    ;nop             side 1 [2] ; (clock stretch; commented out)
-    ;wait 1 pin, 1          [4] ; (clock stretch; commented out)
-    nop              side 1 [7] ; SCL rising edge (use side-set to set SCL to output, thereby driving)
+    nop              side 1 [2] ; SCL rising edge (use side-set to set SCL to output, thereby driving)
+    wait 1 pin, 1           [4] ; (clock stretch)
     in pins, 1              [7] ; read a bit (automatically pushed to FIFO every 8 bits)
     jmp x-- bitloop  side 0 [7] ; SCL falling edge
 
@@ -141,9 +140,9 @@ static inline void pio_i2c_program_init(PIO pio, uint sm, uint offset, uint pin_
 
     // set state machine frequency (assuming assembly program is 32 state machine cycles long
     // for 100kHz I2C frequency, divide system clock by (32 cycles) * (100kHz)
-    float div = (float)clock_get_hz(clk_sys) / (32 * 100000);
+    //float div = (float)clock_get_hz(clk_sys) / (32 * 100000);
     // for 400kHz I2C frequency, divide system clock by (32 cycles) * (400kHz)
-    //float div = (float)clock_get_hz(clk_sys) / (32 * 400000);
+    float div = (float)clock_get_hz(clk_sys) / (32 * 400000);
     sm_config_set_clkdiv(&c, div);
 
     // ===== set up GPIO =====
