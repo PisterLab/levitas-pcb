@@ -29,6 +29,13 @@ void fdc2112_write_register(PIO pio, uint sm, uint8_t reg, uint16_t data){
     buf[2] = data & 0xff; // send LSB byte last
     int err = pio_i2c_write_blocking(pio, sm, FDC2112_I2C_ADDR, buf, 3, false);
 }
+void fdc2112_write_register_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint8_t reg, uint16_t data){
+    uint8_t buf[3];
+    buf[0] = reg;
+    buf[1] = data >> 8; // send MSB byte first
+    buf[2] = data & 0xff; // send LSB byte last
+    pio_i2c_write_blocking_4(pio, sm0, sm1, sm2, sm3, FDC2112_I2C_ADDR, buf, 3, false);
+}
 
 // read a 16-bit value from given register
 uint16_t fdc2112_read_register(PIO pio, uint sm, uint8_t reg){
@@ -156,17 +163,20 @@ int main() {
 
         // TODO: test if can read value without re-writing the register?
 
+        fdc2112_write_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_CONFIG, 0x1401);
         /*
         fdc2112_write_register(pio, sm0, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm1, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm2, FDC2112_REG_CONFIG, 0x1401);
         fdc2112_write_register(pio, sm3, FDC2112_REG_CONFIG, 0x1401);
         */
+        /*
         uint16_t c0 = fdc2112_read_register(pio, sm0, FDC2112_REG_DATA_CH0);
         uint16_t c1 = fdc2112_read_register(pio, sm1, FDC2112_REG_DATA_CH0);
         uint16_t c2 = fdc2112_read_register(pio, sm2, FDC2112_REG_DATA_CH0);
         uint16_t c3 = fdc2112_read_register(pio, sm3, FDC2112_REG_DATA_CH0);
         printf("Data: 0x%02x%02x 0x%02x%02x 0x%02x%02x 0x%02x%02x\n", (c0>>8), (c0&0xff), (c1>>8), (c1&0xff), (c2>>8), (c2&0xff), (c3>>8), (c3&0xff));
+        */
     }
 
     return 0;
