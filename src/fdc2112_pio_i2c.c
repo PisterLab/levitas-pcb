@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-//#include "hardware/i2c.h"
-// I2C over PIO
+#include "pico/multicore.h" // send USB printf on second core
+#include "pico/util/queue.h" // queue for multicore communication
 #include "pio_i2c.h"
 
 // I2C address of FDC2112 chip
@@ -20,6 +20,16 @@
 #define FDC2112_REG_DRIVE_CURRENT_CH0 0x1e
 #define FDC2112_REG_MANUFACTURER_ID 0x7e
 #define FDC2112_REG_DEVICE_ID 0x7f
+
+typedef struct
+{
+    // store four capacitance values
+    int16_t data0;
+    int16_t data1;
+    int16_t data2;
+    int16_t data3;
+} levitation_state_t;
+queue_t data_queue;
 
 // write a 16-bit value to the given register
 void fdc2112_write_register(PIO pio, uint sm, uint8_t reg, uint16_t data){
@@ -63,15 +73,25 @@ void fdc2112_read_register_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, ui
     result[3] =  (((uint16_t)buf_data3[0]) << 8) | ((uint16_t)buf_data3[1]);
 }
 
-// read a 16-bit value from given register
-uint16_t fdc2112_read_register_nowrite(PIO pio, uint sm, uint8_t reg){
-    uint8_t buf_reg[1];
-    buf_reg[0] = reg;
+// read a 16-bit value (assuming register was previously indicated, e.g., by a full read)
+uint16_t fdc2112_read_register_nowrite(PIO pio, uint sm){
     uint8_t buf_data[] = {0x00, 0x00};
     //pio_i2c_write_blocking(pio, sm, FDC2112_I2C_ADDR, buf_reg, 1, true); // shouldn't stop
     pio_i2c_read_blocking(pio, sm, FDC2112_I2C_ADDR, buf_data, 2);
     // result is MSB then LSB byte
     return (((uint16_t)buf_data[0]) << 8) | ((uint16_t)buf_data[1]);
+}
+void fdc2112_read_register_nowrite_4(PIO pio, uint sm0, uint sm1, uint sm2, uint sm3, uint16_t* result){
+    uint8_t buf_data0[] = {0x00, 0x00};
+    uint8_t buf_data1[] = {0x00, 0x00};
+    uint8_t buf_data2[] = {0x00, 0x00};
+    uint8_t buf_data3[] = {0x00, 0x00};
+    pio_i2c_read_blocking_4(pio, sm0, sm1, sm2, sm3, FDC2112_I2C_ADDR, buf_data0, buf_data1, buf_data2, buf_data3, 2);
+    // result is MSB then LSB byte
+    result[0] =  (((uint16_t)buf_data0[0]) << 8) | ((uint16_t)buf_data0[1]);
+    result[1] =  (((uint16_t)buf_data1[0]) << 8) | ((uint16_t)buf_data1[1]);
+    result[2] =  (((uint16_t)buf_data2[0]) << 8) | ((uint16_t)buf_data2[1]);
+    result[3] =  (((uint16_t)buf_data3[0]) << 8) | ((uint16_t)buf_data3[1]);
 }
 
 static void fdc2112_startup(PIO pio, uint sm){
@@ -101,12 +121,29 @@ static void fdc2112_startup(PIO pio, uint sm){
     fdc2112_write_register(pio, sm, FDC2112_REG_CONFIG, 0x1401);
 }
 
+// Use queue
+void core2_main(){
+    while(true){
+        levitation_state_t datapoint;
+        queue_remove_blocking(&data_queue, &datapoint);
+        printf("Data: 0x%04x 0x%04x 0x%04x 0x%04x\n", datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
+        //sleep_ms(10);
+    }
+}
+
 int main() {
 
     // enable all available stdio outputs
     // (currently only USB in CMakeLists.txt)
     // USB serial port defaults to 115200 baud
     stdio_init_all();
+
+
+    // launch second core
+    // queue holds at most 2 data points
+    queue_init(&data_queue, sizeof(levitation_state_t), 2);
+    multicore_launch_core1(core2_main);
+
 
     // set up LED
     gpio_init(PICO_DEFAULT_LED_PIN);
@@ -159,26 +196,22 @@ int main() {
     fdc2112_startup(pio, sm2);
     fdc2112_startup(pio, sm3);
 
-    /*
-    uint16_t c0 = fdc2112_read_register(pio, sm0, FDC2112_REG_DATA_CH0);
-    uint16_t c1 = fdc2112_read_register(pio, sm1, FDC2112_REG_DATA_CH0);
-    uint16_t c2 = fdc2112_read_register(pio, sm2, FDC2112_REG_DATA_CH0);
-    uint16_t c3 = fdc2112_read_register(pio, sm3, FDC2112_REG_DATA_CH0);
-    */
+    uint16_t result[] = {0x00, 0x00, 0x00, 0x00};
+    fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0, result);
 
     gpio_put(PICO_DEFAULT_LED_PIN, true);
     while(true){
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
-        //sleep_ms(1);
-        sleep_us(500);
 
-        // TODO: put printing/USB on second core
+        fdc2112_read_register_nowrite_4(pio, sm0, sm1, sm2, sm3, result);
 
-        // TODO: read value without re-writing the register
-        uint16_t result[] = {0x00, 0x00, 0x00, 0x00};
-        fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0, result);
-        printf("Data: 0x%04x 0x%04x 0x%04x 0x%04x\n", result[0], result[1], result[2], result[3]);
+        sleep_us(50);
+
+        // send data to second core for printing
+        levitation_state_t entry = {result[0], result[1], result[2], result[3]};
+        queue_try_add(&data_queue, &entry); // nonblocking
+
     }
 
     return 0;

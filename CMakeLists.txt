@@ -41,6 +41,8 @@ target_link_libraries(levitas
     hardware_i2c
     hardware_spi
     hardware_pio
+    pico_multicore
+    pico_util
 )
 
 # UART on pins 0/1 is enabled by default, disable it
