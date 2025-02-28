@@ -2,6 +2,7 @@
 #include "pico/stdlib.h"
 #include "pico/multicore.h" // send USB printf on second core
 #include "pico/util/queue.h" // queue for multicore communication
+#include "pico/time.h"
 #include "pio_i2c.h"
 
 // I2C address of FDC2112 chip
@@ -200,18 +201,33 @@ int main() {
     fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0, result);
 
     gpio_put(PICO_DEFAULT_LED_PIN, true);
+
+    const uint64_t LOOP_TIME_US = 150; // try to loop this long on average
+    absolute_time_t loop_start_time = get_absolute_time();
+
     while(true){
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
 
         fdc2112_read_register_nowrite_4(pio, sm0, sm1, sm2, sm3, result);
 
-        sleep_us(50);
-
         // send data to second core for printing
         levitation_state_t entry = {result[0], result[1], result[2], result[3]};
+        // NOTE: THIS CAUSES SIGNIFICANT (maybe ~20us) TIMING JITTER
         queue_try_add(&data_queue, &entry); // nonblocking
 
+        // Loop length will vary slightly due to multicore communication,
+        // so keep a timer to try to control average loop time, making each
+        // loop slightly longer or shorter as necessary.
+        loop_start_time = delayed_by_us(loop_start_time, LOOP_TIME_US);
+        absolute_time_t now_time = get_absolute_time();
+        if(loop_start_time < now_time){
+            // If a loop took far too long (1.5-2x longer than expected or
+            // more, we will have desynchronized from our loop time count
+            // and should restart as quickly as possible.
+            loop_start_time = now_time;
+        }
+        sleep_until(loop_start_time); // takes absolute_time_t
     }
 
     return 0;

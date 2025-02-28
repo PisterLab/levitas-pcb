@@ -43,6 +43,7 @@ target_link_libraries(levitas
     hardware_pio
     pico_multicore
     pico_util
+    pico_time
 )
 
 # UART on pins 0/1 is enabled by default, disable it
