@@ -97,28 +97,83 @@ void fdc2112_read_register_nowrite_4(PIO pio, uint sm0, uint sm1, uint sm2, uint
 
 static void fdc2112_startup(PIO pio, uint sm){
     // Chip is in sleep state by default and must be enabled.
-    // To do so, set a bit in the CONFIG register, and set the
+    // To do so, set a bit in the CONFIG register. First, set the
     // rest of the configuration while we're at it.
 
-    // Set register 0x1a to 00010100 00000001 = 0x1401
-    // (sense on channel 0, no sleep mode, full current, internal oscillator)
-
-
-    // F_ref = 43MHz -> 2866 cycles per sample at 15kHz -> 10 bits precision? -> 1024 clock cycles for rcount -> rcount = 0x0040
-    //fdc2112_write_register(i2c_inst, FDC2112_REG_RCOUNT_CH0, 0x8329);
-    // rcount > 8
-    fdc2112_write_register(pio, sm, FDC2112_REG_RCOUNT_CH0, 0x0040);
-
-    //fdc2112_write_register(i2c_inst, FDC2112_REG_SETTLECOUNT_CH0, 0x000a);
+    // ===== Measurement time behavior =====
+    //
+    // First we set the RCOUNT and SETTLECOUNT registers.
+    // These control how long the chip takes to read a given signal
+    // (see manual pages 15, 16).
+    //
+    // If the chip is used to read capacitance from multiple channels,
+    // SETTLECOUNT determines the amount of time a measurement is
+    // allowed to stabilize after switching channels. This does not
+    // apply to us, so we set SETTLECOUNT and otherwise ignore it.
+    // (TODO CONFIRM THIS WORKS)
+    //
+    // The chip takes a configurable amount of time to take a measurement.
+    // Longer measurement times give more accurate values. The time is
+    // determined by RCOUNT (specifically, (RCOUNT*16+4)/f_{REF0} where
+    // f_{REF0} is the reference oscillator frequency, about 40MHz).
+    // Measuring n bits of precision requires 2^n = (RCOUNT*16).
+    // In our case, we want to take measurements within maybe 10us. We
+    // choose RCOUNT=33=0x0021 giving 9.04 bits of precision in 13.us.
+    // (Note the minimum is RCOUNT>8, which we satisfy; see page 13)
+    //
+    // (but register map on page 25 says min is 0x0100 or 0x0080?)
+    //fdc2112_write_register(pio, sm, FDC2112_REG_RCOUNT_CH0, 0x0040);
+    fdc2112_write_register(pio, sm, FDC2112_REG_RCOUNT_CH0, 0x0021);
+    // determines the sensor activation time
+    // must have settlecount > 3
     fdc2112_write_register(pio, sm, FDC2112_REG_SETTLECOUNT_CH0, 0x000a);
-    // settlecount > 3
+
+
+    // set clock dividers
+    // f_{REF0}=f_{CLK}/CH0_FREQ_DIVIDER
+    // f_{IN0}=f_{SENSOR0}/CH0_FIN_SEL
 
     fdc2112_write_register(pio, sm, FDC2112_REG_CLOCK_DIVIDERS_CH0, 0x2002);
+
     fdc2112_write_register(pio, sm, FDC2112_REG_ERROR_CONFIG, 0x0000);
     // 0000 0010 0000 1101 = 0x020d
     fdc2112_write_register(pio, sm, FDC2112_REG_MUX_CONFIG, 0x020d);
+
+
+    // Set gain and offset control
+    //
+    // gain:
+    // (see manual page 35)
+    // 0 0000 00 0 | 0000 0000
+    //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400);
+    fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400);
+    // offset:
+    // (see manual page 27)
+    fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x0000);
+
+    // Determines the drive current:
+    // (see chart on manual page 36)
+    //
+    // code  resulting capacitance readings
+    // ====================================
+    // 00000 0x01b8 0x01d3 0x01d3 0x01c9
+    // 00001 0x01ba 0x01d5 0x01d5 0x01cb
+    // 00010 0x01bb 0x01d7 0x01d7 0x01cc
+    // 00011 0x01bd 0x01d9 0x01d9 0x01cd
+    // ...
+    // 01001 0x01c3 0x01df 0x01df 0x01d4
+    //
+    // Result: higher current -> slightly higher reading?
+    // (TBD: measure voltage)
     fdc2112_write_register(pio, sm, FDC2112_REG_DRIVE_CURRENT_CH0, 0x0000);
+
+    // Set register 0x1a to 00010100 00000001 = 0x1401
+    // (sense on channel 0, no sleep mode, full current, internal oscillator)
+    // - this also tells the chip to use its internal reference oscillator
+    //   - f_{CLK} = f_{INTCLK}
+    //   - f_{INTCLK} = internal clock = 43MHz (approximately; ranges 35-55MHz with manufacturing)
     // 0001 0100 0000 0001 = 0x1401
+    // NOTE: this register has to be set last because it starts the sensor running
     fdc2112_write_register(pio, sm, FDC2112_REG_CONFIG, 0x1401);
 }
 
@@ -128,7 +183,25 @@ void core2_main(){
         levitation_state_t datapoint;
         queue_remove_blocking(&data_queue, &datapoint);
         printf("Data: 0x%04x 0x%04x 0x%04x 0x%04x\n", datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
-        //sleep_ms(10);
+        /*
+        printf("Data: %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n", \
+            ((datapoint.data3) & 0x8000 ? '1' : '0'), \
+            ((datapoint.data3) & 0x4000 ? '1' : '0'), \
+            ((datapoint.data3) & 0x2000 ? '1' : '0'), \
+            ((datapoint.data3) & 0x1000 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0800 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0400 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0200 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0100 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0080 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0040 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0020 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0010 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0008 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0004 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0002 ? '1' : '0'), \
+            ((datapoint.data3) & 0x0001 ? '1' : '0'));
+        */
     }
 }
 
