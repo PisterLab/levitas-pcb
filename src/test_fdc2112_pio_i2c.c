@@ -1,3 +1,8 @@
+// The following code reads data from the fdc2112 capacitive
+// sensors, all in parallel, using the PIO modules in the microcontroller.
+// The data is then printed out via USB (using the second microcontroller
+// code and careful timing to ensure maximum speed).
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "pico/multicore.h" // send USB printf on second core
@@ -128,21 +133,31 @@ static void fdc2112_startup(PIO pio, uint sm){
     // must have settlecount > 3
     fdc2112_write_register(pio, sm, FDC2112_REG_SETTLECOUNT_CH0, 0x000a);
 
-
-    // set clock dividers
-    // f_{REF0}=f_{CLK}/CH0_FREQ_DIVIDER
-    // f_{IN0}=f_{SENSOR0}/CH0_FIN_SEL
-
-    fdc2112_write_register(pio, sm, FDC2112_REG_CLOCK_DIVIDERS_CH0, 0x2002);
-
+    // ===== Small things =====
+    //
+    // The chip has some error reporting functions; leave them off
     fdc2112_write_register(pio, sm, FDC2112_REG_ERROR_CONFIG, 0x0000);
+    //
+    // Prepare to only read capacitance from a single channel on the chip
+    // (this setting can choose to alternate readings between channels)
     // 0000 0010 0000 1101 = 0x020d
     fdc2112_write_register(pio, sm, FDC2112_REG_MUX_CONFIG, 0x020d);
 
-
-    // Set gain and offset control
+    // ===== Gain and offset settings =====
     //
-    // gain:
+    // The following clock divider setting changes some measurement
+    // parameters:
+    // f_{REF0}=f_{CLK}/CH0_FREQ_DIVIDER
+    // f_{IN0}=f_{SENSOR0}/CH0_FIN_SEL
+    fdc2112_write_register(pio, sm, FDC2112_REG_CLOCK_DIVIDERS_CH0, 0x2002);
+    //
+    // ...and the resulting digital data is 16 bits, of which only
+    // 12 bits can be read over I2C. However, the data can be
+    // bit-shifted and/or given an offset before I2C reading in order
+    // to see the LSB (e.g., if there is only a small capacitance
+    // change in a relatively large capacitance).
+    //
+    // set gain to a 3-bit shift (2^3=8x multiplier):
     // (see manual page 35)
     // 0 0000 00 0 | 0000 0000
     //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400);
@@ -151,6 +166,16 @@ static void fdc2112_startup(PIO pio, uint sm){
     // (see manual page 27)
     fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x0000);
 
+    // ===== Drive current =====
+    //
+    // The current the sensor uses to read capacitance can be adjusted.
+    // This results in slightly different capacitance readings.
+    // Supposedly there's an optimum value that can be found by tweaking
+    // until the sensor output drive signal is about 1.8V, but I wasn't
+    // able to measureme of the signal (probably too high frequency?).
+    //
+    // Using the default values (0x0000) seems to work fine.
+    //
     // Determines the drive current:
     // (see chart on manual page 36)
     //
@@ -167,41 +192,33 @@ static void fdc2112_startup(PIO pio, uint sm){
     // (TBD: measure voltage)
     fdc2112_write_register(pio, sm, FDC2112_REG_DRIVE_CURRENT_CH0, 0x0000);
 
+    // ===== Start measurement =====
+    //
+    // Upon startup, the chip is in a sleep state. Use the following command
+    // to start the chip so we can read capacitance. Note that afterward,
+    // additional configuration changes might not work until the chip is
+    // powered off and on again (which is why we do this last).
+    //
+    // At the same time, this register also choose which oscillator to use.
+    // We will use the chip's internal oscillator (we don't have an external
+    // oscillator connected).
+    //
     // Set register 0x1a to 00010100 00000001 = 0x1401
     // (sense on channel 0, no sleep mode, full current, internal oscillator)
     // - this also tells the chip to use its internal reference oscillator
     //   - f_{CLK} = f_{INTCLK}
     //   - f_{INTCLK} = internal clock = 43MHz (approximately; ranges 35-55MHz with manufacturing)
-    // 0001 0100 0000 0001 = 0x1401
-    // NOTE: this register has to be set last because it starts the sensor running
     fdc2112_write_register(pio, sm, FDC2112_REG_CONFIG, 0x1401);
 }
 
-// Use queue
+// Print to USB with second core
+// This means printing won't take time away from the main sensor read loop
+// (though it still adds a little bit of jitter, visible via oscilloscope)
 void core2_main(){
     while(true){
         levitation_state_t datapoint;
         queue_remove_blocking(&data_queue, &datapoint);
         printf("Data: 0x%04x 0x%04x 0x%04x 0x%04x\n", datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
-        /*
-        printf("Data: %c%c%c%c%c%c%c%c%c%c%c%c%c%c%c%c\n", \
-            ((datapoint.data3) & 0x8000 ? '1' : '0'), \
-            ((datapoint.data3) & 0x4000 ? '1' : '0'), \
-            ((datapoint.data3) & 0x2000 ? '1' : '0'), \
-            ((datapoint.data3) & 0x1000 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0800 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0400 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0200 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0100 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0080 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0040 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0020 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0010 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0008 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0004 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0002 ? '1' : '0'), \
-            ((datapoint.data3) & 0x0001 ? '1' : '0'));
-        */
     }
 }
 
@@ -212,12 +229,11 @@ int main() {
     // USB serial port defaults to 115200 baud
     stdio_init_all();
 
-
     // launch second core
     // queue holds at most 2 data points
+    // (will use this to send data over USB without affecting (much) timing of main sensor readings)
     queue_init(&data_queue, sizeof(levitation_state_t), 2);
     multicore_launch_core1(core2_main);
-
 
     // set up LED
     gpio_init(PICO_DEFAULT_LED_PIN);
@@ -235,45 +251,21 @@ int main() {
     pio_i2c_program_init(pio, sm2, offset, 8, 9); // start PIO state machine at given instruction offset with given SDA and SCL pin
     pio_i2c_program_init(pio, sm3, offset, 10, 11); // start PIO state machine at given instruction offset with given SDA and SCL pin
 
-    //i2c_init(i2c0, 400 * 1000); // i2c fast mode
-    //i2c_init(i2c1, 400 * 1000); // i2c fast mode
-    //gpio_set_function(4, GPIO_FUNC_I2C); // i2c0 SDA, Pico 6, MISO-d
-    //gpio_set_function(5, GPIO_FUNC_I2C); // i2c0 SCL, Pico 7, CS-d
-    //gpio_set_function(6, GPIO_FUNC_I2C); // i2c1 SDA, Pico 9, SCLK-d
-    //gpio_set_function(7, GPIO_FUNC_I2C); // i2c1 SCL, Pico 10, MOSI-d
-    //gpio_set_function(8, GPIO_FUNC_I2C); // i2c0 SDA, Pico 11, SDA-d
-    //gpio_set_function(9, GPIO_FUNC_I2C); // i2c0 SCL, Pico 12, SCL-d
-    //gpio_set_function(10, GPIO_FUNC_I2C); // i2c1 SDA, Pico 14, SDA4-d
-    //gpio_set_function(11, GPIO_FUNC_I2C); // i2c1 SCL, Pico 15, SCL4-d
-    //gpio_pull_up(4);
-    //gpio_pull_up(5);
-    //gpio_pull_up(6);
-    //gpio_pull_up(7);
-    //gpio_pull_up(8);
-    //gpio_pull_up(9);
-    //gpio_pull_up(10);
-    //gpio_pull_up(11);
-
-
-    /*
-    for(uint i=20; i>0; i--){
-        sleep_ms(300);
-        printf("count %d\n", i);
-    }
-    */
-
-    // call many times just in case
+    // wait just in case fdc2112 sensors need to initialize
     sleep_ms(500);
-
     fdc2112_startup(pio, sm0);
     fdc2112_startup(pio, sm1);
     fdc2112_startup(pio, sm2);
     fdc2112_startup(pio, sm3);
 
     uint16_t result[] = {0x00, 0x00, 0x00, 0x00};
+    // make a first reading explicitly identifying the chip registers
+    // we want to read from in the future. Afterward, we can use the
+    // faster read_register_nowrite function which will just read the
+    // same data we get here.
     fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0, result);
 
-    gpio_put(PICO_DEFAULT_LED_PIN, true);
+    //gpio_put(PICO_DEFAULT_LED_PIN, true);
 
     const uint64_t LOOP_TIME_US = 150; // try to loop this long on average
     absolute_time_t loop_start_time = get_absolute_time();
@@ -282,6 +274,7 @@ int main() {
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
 
+        // read quickly from the chip registers
         fdc2112_read_register_nowrite_4(pio, sm0, sm1, sm2, sm3, result);
 
         // send data to second core for printing
