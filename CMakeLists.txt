@@ -29,9 +29,9 @@ add_executable(levitas
     src/pio_i2c.h
 
     # (to run tests, enable any of the following and disable main.c)
-    # test fdc2112 cap sensors with hardware i2c
+    # test fdc2112 cap sensors with hardware i2c (worse than PIO)
     # src/test_fdc2112_i2c.c
-    # test fdc2112 cap sensors with PIO i2c
+    # test fdc2112 cap sensors with PIO i2c (better than hardware i2c)
     # src/test_fdc2112_pio_i2c.c
     # test mpu6050 accelerometer with hardware i2c
     # src/test_mpu6050_i2c.c
