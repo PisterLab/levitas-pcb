@@ -1,5 +1,12 @@
-// adapted from example code:
+// The following code reads data from the MPU6050 accelerometer
+// over I2C then prints the result to a serial port over USB.
+//
+// Run this to confirm the sensor is working.
+
+// Most of this code is adapted from the example code here:
 // https://github.com/raspberrypi/pico-examples/blob/master/i2c/mpu6050_i2c/mpu6050_i2c.c
+// Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <stdio.h>
 #include <string.h>
@@ -11,6 +18,12 @@
 static int addr = 0x68;
 
 static void mpu6050_reset() {
+
+    // for gyro and accel features, see page 10 of datasheet
+    // gyro full-scale range: see FS_SEL value?
+    // accel full-scale range: see AFS_SEL value?
+    // etc.
+
     // Two byte reset. First byte register, second byte data
     // There are a load more options to set up the device in different ways that could be added here
     uint8_t buf[] = {0x6B, 0x80};
@@ -19,7 +32,7 @@ static void mpu6050_reset() {
 
     // Clear sleep mode (0x6B register, 0x00 value)
     buf[1] = 0x00;  // Clear sleep mode by writing 0x00 to the 0x6B register
-    i2c_write_blocking(i2c1, addr, buf, 2, false); 
+    i2c_write_blocking(i2c1, addr, buf, 2, false);
     sleep_ms(10); // Allow stabilization after waking up
 }
 
@@ -72,20 +85,25 @@ int main() {
     gpio_set_dir(PICO_POWER_PIN, GPIO_OUT);
     gpio_put(PICO_POWER_PIN, false);
 
-    // Use I2C1 on pins 2/3 at 400kHz
+    // Use hardware I2C on pins 2/3 at 400kHz
+    // Note pins 2/3 are SDA/SCL specifically for the i2c1 (as opposed
+    // to i2c0) hardware I2C block (see RP2350 or Pico datasheet); we'll
+    // use that in each i2c read/write command
     i2c_init(i2c_default, 400 * 1000);
     gpio_set_function(2, GPIO_FUNC_I2C);
     gpio_set_function(3, GPIO_FUNC_I2C);
     gpio_pull_up(2);
     gpio_pull_up(3);
-    // Make the I2C pins available to picotool
+    // show the I2C pins in picotool
     bi_decl(bi_2pins_with_func(2, 3, GPIO_FUNC_I2C));
 
+    // initialize sensor
     mpu6050_reset();
 
     int16_t acceleration[3], gyro[3], temp;
 
     while (1) {
+        // get data from sensor
         mpu6050_read_raw(acceleration, gyro, &temp);
 
         // These are the raw numbers from the chip, so will need tweaking to be really useful.
