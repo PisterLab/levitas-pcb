@@ -2,6 +2,12 @@
 // sensors, all in parallel, using the PIO modules in the microcontroller.
 // The data is then printed out via USB (using the second microcontroller
 // code and careful timing to ensure maximum speed).
+//
+// NOTE: use this instead of test_fdc2112_i2c.c, which uses the
+// two RP2350 hardware I2C channels instead of PIO I2C and is thus limited
+// to two capacitive sensors at a time with nonsimultaneous measurements.
+// Here, using the PIO allows us to measure from four capacitive sensors
+// at the same time (plus/minus only a microsecond or so).
 
 #include <stdio.h>
 #include "pico/stdlib.h"

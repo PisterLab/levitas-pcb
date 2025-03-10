@@ -1,9 +1,17 @@
+// The following code reads data from two fdc2112 capacitive
+// sensors, one after the other, using the hardware I2C built into
+// the RP2350 chip. The data is then printed out via USB.
+//
+// NOTE: it is better to use test_fdc2112_pio_i2c.c, which uses the
+// RP2350 PIO modules for I2C and able to read all four capacitive
+// sensors, and do so more simultaneously (plus/minus only a microsecond
+// or so).
+
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
 #define fdc2112_addr 0x2b
-
 
 // I2C address of FDC2112 chip
 #define FDC2112_I2C_ADDR 0x2b
@@ -46,13 +54,8 @@ uint16_t fdc2112_read_register(i2c_inst_t* i2c_inst, uint8_t reg){
 }
 
 static void fdc2112_startup(i2c_inst_t* i2c_inst){
-    // Chip is in sleep state by default and must be enabled.
-    // To do so, set a bit in the CONFIG register, and set the
-    // rest of the configuration while we're at it.
-
-    // Set register 0x1a to 00010100 00000001 = 0x1401
-    // (sense on channel 0, no sleep mode, full current, internal oscillator)
-
+    // set assorted chip configuration values.
+    // see manual or test_fdc2112_pio_i2c.c for more detail.
 
     // F_ref = 43MHz -> 2866 cycles per sample at 15kHz -> 10 bits precision? -> 1024 clock cycles for rcount -> rcount = 0x0040
     //fdc2112_write_register(i2c_inst, FDC2112_REG_RCOUNT_CH0, 0x8329);
@@ -68,6 +71,8 @@ static void fdc2112_startup(i2c_inst_t* i2c_inst){
     // 0000 0010 0000 1101 = 0x020d
     fdc2112_write_register(i2c_inst, FDC2112_REG_MUX_CONFIG, 0x020d);
     fdc2112_write_register(i2c_inst, FDC2112_REG_DRIVE_CURRENT_CH0, 0x0000);
+
+    // this I2C configuration makes the chip start measurements
     // 0001 0100 0000 0001 = 0x1401
     fdc2112_write_register(i2c_inst, FDC2112_REG_CONFIG, 0x1401);
 }
@@ -80,12 +85,15 @@ int main() {
     stdio_init_all();
 
     // set up LED
-    gpio_init(PICO_DEFAULT_LED_PIN);
-    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
+    //gpio_init(PICO_DEFAULT_LED_PIN);
+    //gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
     i2c_init(i2c0, 400 * 1000); // i2c fast mode
     i2c_init(i2c1, 400 * 1000); // i2c fast mode
 
+    // choose which two capacitive sensor chips to connect to
+    // (can only do two at once, and one must be on the i2c0
+    // hardware pins while the other is on the i2c1 pins)
     gpio_set_function(4, GPIO_FUNC_I2C); // i2c0 SDA, Pico 6, MISO-d
     gpio_set_function(5, GPIO_FUNC_I2C); // i2c0 SCL, Pico 7, CS-d
     gpio_set_function(6, GPIO_FUNC_I2C); // i2c1 SDA, Pico 9, SCLK-d
@@ -103,7 +111,6 @@ int main() {
     gpio_pull_up(10);
     gpio_pull_up(11);
 
-    // call many times just in case
     sleep_ms(500);
     fdc2112_startup(i2c0);
     fdc2112_startup(i2c1);
@@ -112,21 +119,16 @@ int main() {
     while(true){
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         sleep_ms(10);
-        //sleep_us(100);
-        //printf("LeviTAS v202501-A\n");
-        printf("-\n");
 
-        // read device ID (should be 0x3054)
+        // read data from chips:
 
-        //uint16_t devid = fdc2112_read_register(FDC2112_REG_DEVICE_ID);
         uint16_t devid0 = fdc2112_read_register(i2c0, FDC2112_REG_DATA_CH0);
-        printf("Data 0: 0x%x", (devid0 >> 8));
-        printf(" %x\n", (devid0 & 0xff));
+        printf("Data 0: 0x%02x", (devid0 >> 8));
+        printf("%02x\n", (devid0 & 0xff));
 
         uint16_t devid1 = fdc2112_read_register(i2c1, FDC2112_REG_DATA_CH0);
-        printf("Data 1: 0x%x", (devid1 >> 8));
-        printf(" %x\n", (devid1 & 0xff));
-
+        printf("Data 1: 0x%02x", (devid1 >> 8));
+        printf("%02x\n", (devid1 & 0xff));
     }
 
     return 0;
