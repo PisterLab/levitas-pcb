@@ -21,15 +21,22 @@ pico_sdk_init()
 
 # define local project files
 add_executable(levitas
-    #src/main.c
-    #src/i2c.c
-    #src/mpu6050_i2c.c
-    #src/fdc2112_i2c.c
-    #src/spi.c
+    # main program
+    src/main.c
 
-    src/fdc2112_pio_i2c.c
+    # PIO i2c library
     src/pio_i2c.c
     src/pio_i2c.h
+
+    # (to run tests, enable any of the following and disable main.c)
+    # test fdc2112 cap sensors with hardware i2c
+    # src/test_fdc2112_i2c.c
+    # test fdc2112 cap sensors with PIO i2c
+    # src/test_fdc2112_pio_i2c.c
+    # test mpu6050 accelerometer with hardware i2c
+    # src/test_mpu6050_i2c.c
+    # test max5715 DAC with hardware spi
+    # src/test_max5715_spi.c
 )
 
 # take PIO file and generate a header file (to be included in C files)
@@ -50,6 +57,7 @@ target_link_libraries(levitas
 pico_enable_stdio_uart(levitas 0)
 
 # enable USB virtual serial port
+# (i.e., appear as a serial port when plugged in over USB, use w/ printf)
 # (this is equivalent to including pico_stdio_usb)
 # (includes functionality to reset over USB)
 pico_enable_stdio_usb(levitas 1)

@@ -48,7 +48,7 @@ void HVAWG_reset(){
     //spi_write_blocking(spi1, buf_power, 3);
 }
 
-void HVAWG_write(bool high){
+void HVAWG_write(int state){
     // all commands are init followed by 3 bytes = 24 bits
 
     // CODEn = 0000(dac-select) (data) (data)xxxx
@@ -57,18 +57,37 @@ void HVAWG_write(bool high){
     // DAC selection (see table 3):
     // 0x00, 0x01, 0x02, 0x03 (or 0x04, 0x08 for all DACs)
 
-    if(high){
+    if(state==0){
         // CODEn = 00000001 11111111 11110000 = 0x01fff0
         // CODEn = 00000010 11111111 11110000 = 0x02fff0
         // CODEn = 00000100 11111111 11110000 = 0x04fff0
         // CODEn_LOAD_ALL = 00101000 11111111 11110000 = 0x28fff0
 
         HVAWG_init_command();
-        uint8_t buf1[] = {0x00, 0xff, 0xf0};
+        uint8_t buf1[] = {0x00, 0x00, 0x00};
         spi_write_blocking(spi1, buf1, 3);
 
         HVAWG_init_command();
         //uint8_t buf2[] = {0x01, 0xff, 0xf0};
+        uint8_t buf2[] = {0x01, 0xff, 0xf0};
+        spi_write_blocking(spi1, buf2, 3);
+
+        HVAWG_init_command();
+        uint8_t buf3[] = {0x02, 0x00, 0x00};
+        spi_write_blocking(spi1, buf3, 3);
+
+        HVAWG_init_command();
+        //uint8_t buf4[] = {0x23, 0xff, 0xf0};
+        uint8_t buf4[] = {0x23, 0xff, 0xf0};
+        spi_write_blocking(spi1, buf4, 3);
+
+    }else if(state==1){
+
+        HVAWG_init_command();
+        uint8_t buf1[] = {0x00, 0xff, 0xf0};
+        spi_write_blocking(spi1, buf1, 3);
+
+        HVAWG_init_command();
         uint8_t buf2[] = {0x01, 0x00, 0x00};
         spi_write_blocking(spi1, buf2, 3);
 
@@ -77,29 +96,11 @@ void HVAWG_write(bool high){
         spi_write_blocking(spi1, buf3, 3);
 
         HVAWG_init_command();
-        //uint8_t buf4[] = {0x23, 0xff, 0xf0};
-        uint8_t buf4[] = {0x23, 0x00, 0x00};
-        spi_write_blocking(spi1, buf4, 3);
-
-    }else{
-
-        HVAWG_init_command();
-        uint8_t buf1[] = {0x00, 0x00, 0x00};
-        spi_write_blocking(spi1, buf1, 3);
-
-        HVAWG_init_command();
-        uint8_t buf2[] = {0x01, 0x00, 0x00};
-        spi_write_blocking(spi1, buf2, 3);
-
-        HVAWG_init_command();
-        uint8_t buf3[] = {0x02, 0x00, 0x00};
-        spi_write_blocking(spi1, buf3, 3);
-
-        HVAWG_init_command();
         uint8_t buf4[] = {0x23, 0x00, 0x00};
         spi_write_blocking(spi1, buf4, 3);
 
     }
+
 }
 
 int main() {
@@ -127,11 +128,11 @@ int main() {
 
     while (true) {
         gpio_put(PICO_DEFAULT_LED_PIN, true);
-        HVAWG_write(true);
-        sleep_us(500);
+        HVAWG_write(0);
+        sleep_us(25);
 
         gpio_put(PICO_DEFAULT_LED_PIN, false);
-        HVAWG_write(false);
-        sleep_us(500);
+        HVAWG_write(1);
+        sleep_us(25);
     }
 }

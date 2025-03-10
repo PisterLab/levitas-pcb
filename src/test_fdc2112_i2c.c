@@ -53,8 +53,16 @@ static void fdc2112_startup(i2c_inst_t* i2c_inst){
     // Set register 0x1a to 00010100 00000001 = 0x1401
     // (sense on channel 0, no sleep mode, full current, internal oscillator)
 
-    fdc2112_write_register(i2c_inst, FDC2112_REG_RCOUNT_CH0, 0x8329);
+
+    // F_ref = 43MHz -> 2866 cycles per sample at 15kHz -> 10 bits precision? -> 1024 clock cycles for rcount -> rcount = 0x0040
+    //fdc2112_write_register(i2c_inst, FDC2112_REG_RCOUNT_CH0, 0x8329);
+    // rcount > 8
+    fdc2112_write_register(i2c_inst, FDC2112_REG_RCOUNT_CH0, 0x0040);
+
+    //fdc2112_write_register(i2c_inst, FDC2112_REG_SETTLECOUNT_CH0, 0x000a);
     fdc2112_write_register(i2c_inst, FDC2112_REG_SETTLECOUNT_CH0, 0x000a);
+    // settlecount > 3
+
     fdc2112_write_register(i2c_inst, FDC2112_REG_CLOCK_DIVIDERS_CH0, 0x2002);
     fdc2112_write_register(i2c_inst, FDC2112_REG_ERROR_CONFIG, 0x0000);
     // 0000 0010 0000 1101 = 0x020d
@@ -77,26 +85,36 @@ int main() {
 
     i2c_init(i2c0, 400 * 1000); // i2c fast mode
     i2c_init(i2c1, 400 * 1000); // i2c fast mode
-    gpio_set_function(4, GPIO_FUNC_I2C);
-    gpio_set_function(5, GPIO_FUNC_I2C);
-    gpio_set_function(6, GPIO_FUNC_I2C);
-    gpio_set_function(7, GPIO_FUNC_I2C);
+
+    gpio_set_function(4, GPIO_FUNC_I2C); // i2c0 SDA, Pico 6, MISO-d
+    gpio_set_function(5, GPIO_FUNC_I2C); // i2c0 SCL, Pico 7, CS-d
+    gpio_set_function(6, GPIO_FUNC_I2C); // i2c1 SDA, Pico 9, SCLK-d
+    gpio_set_function(7, GPIO_FUNC_I2C); // i2c1 SCL, Pico 10, MOSI-d
+    //gpio_set_function(8, GPIO_FUNC_I2C); // i2c0 SDA, Pico 11, SDA-d
+    //gpio_set_function(9, GPIO_FUNC_I2C); // i2c0 SCL, Pico 12, SCL-d
+    //gpio_set_function(10, GPIO_FUNC_I2C); // i2c1 SDA, Pico 14, SDA4-d
+    //gpio_set_function(11, GPIO_FUNC_I2C); // i2c1 SCL, Pico 15, SCL4-d
     gpio_pull_up(4);
     gpio_pull_up(5);
     gpio_pull_up(6);
     gpio_pull_up(7);
+    gpio_pull_up(8);
+    gpio_pull_up(9);
+    gpio_pull_up(10);
+    gpio_pull_up(11);
 
     // call many times just in case
     sleep_ms(500);
     fdc2112_startup(i2c0);
     fdc2112_startup(i2c1);
 
+    gpio_put(PICO_DEFAULT_LED_PIN, true);
     while(true){
-        gpio_put(PICO_DEFAULT_LED_PIN, true);
-        sleep_ms(50);
-        gpio_put(PICO_DEFAULT_LED_PIN, false);
-        sleep_ms(50);
-        printf("LeviTAS v202501-A\n");
+        //gpio_put(PICO_DEFAULT_LED_PIN, true);
+        sleep_ms(10);
+        //sleep_us(100);
+        //printf("LeviTAS v202501-A\n");
+        printf("-\n");
 
         // read device ID (should be 0x3054)
 
