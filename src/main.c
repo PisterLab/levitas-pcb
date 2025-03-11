@@ -169,14 +169,16 @@ static void fdc2112_startup(PIO pio, uint sm){
     // to see the LSB (e.g., if there is only a small capacitance
     // change in a relatively large capacitance).
     //
-    // set gain to a 3-bit shift (2^3=8x multiplier):
+    // set gain to a 4-bit shift (2^4=16x multiplier):
     // (see manual page 35)
     // 0 0000 00 0 | 0000 0000
-    //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400);
-    fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400);
+    //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0000); // 0-bit shift
+    //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400); // 3-bit shift
+    fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0600); // 4-bit shift
     // offset:
     // (see manual page 27)
-    fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x0000);
+    //fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x0000); // no offset
+    fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x1800);
 
     // ===== Drive current =====
     //
@@ -363,10 +365,11 @@ void HVAWG_write_voltage(float V1, float V2, float V3, float V4){
 // This means printing won't take time away from the main sensor read loop
 // (though it still adds a little bit of jitter, visible via oscilloscope)
 void core2_main(){
+    //printf("time(us) cap1 cap2 cap3 cap4\n");
     while(true){
         levitation_state_t datapoint;
         queue_remove_blocking(&data_queue, &datapoint);
-        printf("Data: 0x%04x 0x%04x 0x%04x 0x%04x\n", datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
+        printf("%llu 0x%04x 0x%04x 0x%04x 0x%04x\n", to_us_since_boot(get_absolute_time()), datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
     }
 }
 
@@ -421,17 +424,30 @@ int main() {
     // wait at least 200us for DAC to initialize
     sleep_ms(250);
     HVAWG_reset();
-    HVAWG_write_voltage(0,0,0,0); // start by applying zero volts everywhere
+    HVAWG_write_voltage(0,0,0,0); // start by applying this voltage
 
     // start main loop
     const uint64_t LOOP_TIME_US = 150; // try to loop this long on average
     absolute_time_t loop_start_time = get_absolute_time();
     while(true){
+
+        /*
+        sleep_ms(10);
+        HVAWG_write_voltage(0,0,0,0);
+        sleep_ms(30);
+        HVAWG_write_voltage(225,225,225,225);
+        */
+
+
+
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
 
         // read quickly from the chip registers
         fdc2112_read_register_nowrite_4(pio, sm0, sm1, sm2, sm3, result);
+
+        // TODO: CONFIRM CAPACITANCE SENSORS ARE IN CORRECT ORDER
+        // (OR REARRANGE THEM TO MATCH PCB)
 
         // send data to second core for printing
         levitation_state_t entry = {result[0], result[1], result[2], result[3]};
