@@ -1,2 +1,6 @@
 # ignore build files
 firmware/build/
+
+# ignore kicad backups
+pcb/levitas/levitas-backups
+pcb/levitas_daughterboard/levitas_daughterboard-backups
