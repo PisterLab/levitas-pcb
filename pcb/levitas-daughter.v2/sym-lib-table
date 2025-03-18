@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "levitas_custom")(type "KiCad")(uri "${KIPRJMOD}/levitas_custom.kicad_sym")(options "")(descr ""))
+)
