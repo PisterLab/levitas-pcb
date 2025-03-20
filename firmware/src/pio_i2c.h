@@ -2,7 +2,7 @@
  * Part of a library to run I2C master from a PIO state machine.
  * (use with pio_i2c.c and pio_i2c.pio)
  *
- * Originally from
+ * Originally from (then slightly modified)
  * https://github.com/raspberrypi/pico-examples/tree/master/pio/i2c
  */
 
