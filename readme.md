@@ -14,6 +14,8 @@ This is how to program the microcontroller.
 
 This project uses the Raspberry Pi RP2350 microcontroller, which is mounted to a Raspberry Pi Pico 2 dev board that we solder onto the main project PCB. The dev board is cheap and convenient because in addition to the RP2350 itself it includes flash memory, an oscillator, and power circuitry that we'd otherwise have to include anyway. The programming is the same either way.
 
+The RP2350 is uniquely good for our use case because we need (a) four I2C buses running in parallel to read FDC2112 capacitance sensors, for which we use the PIO modules available only on the RP2040 and RP2350, and (b) we'd like floating-point math support built into the hardware, which the RP2350 has but the RP2040 does not. An FPGA might accomplish roughly the same tasks but is much more expensive and complicated to use.
+
 Programming the RP2350 microcontroller is officially supported in C++ or MicroPython. We use C++ to more easily write programs that satisfy tight timing constraints (e.g., making a control loop as fast as possible). See the Documentation section below for links to the official documentation.
 
 Note we're specifically using the 2.0.0 version of the SDK (because that's what we started with and haven't bothered to update it). Updating this requires updating the pico-sdk subfolder, every mention of the SDK version in other configuration files, and the version of the picotool utility used to upload the software. To minimize compilation issues, we also specifically chose to put the SDK files inside this git repo instead of requiring them to be downloaded to an external directory and linked.
