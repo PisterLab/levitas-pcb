@@ -55,31 +55,20 @@ https://www.raspberrypi.com/documentation/microcontrollers/debug-probe.html
 
 ## Installation
 
+Use the following steps to set up a software build environment for the Pico formware on Linux or Windows, or follow the [official getting started guide](https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf) for more generic instructions.
+
 On Linux:
-- install gcc-arm-none-eabi compiler (arm-non-eabi-gcc on nixos)
-- install newlib (?)
-- install cmake and gnumake
-- install picotool
-- install picotool udev rules
-- in main code repo, download Pico SDK https://github.com/raspberrypi/pico-sdk
-    - SDK might expect picotool version to match
-    - make sure to download TinyUSB git submodule (git submodule update --init)
-      (pico-sdk/lib/btstack, cyw43-driver, lwip, mbedtls, tinyusb)
-    - (guess: for reliability, after downloading all this, remove git and commit everything directly in main project?)
-    - example:
-        cd main_project_dir
-        git clone --depth 1 --branch 2.0.0 https://github.com/raspberrypi/pico-sdk
-        cd pico-sdk
-        git submodule update --init
-        rm -rf .git
-        cd ..
-        chown root:users -R pico-sdk
-- follow Pico SDK README instructions
+- Install gcc-arm-none-eabi compiler (arm-non-eabi-gcc on nixos)
+- Install newlib
+- Install cmake and gnumake
+- Install picotool
+- Install picotool udev rules
+- In `firmware` folder, run `make build` to compile code and `make reload` to download and run (or `make` to do both).
+- Use your favorite serial monitor to see data the Pico sends over USB.
 
 On Windows:
-- (follow getting started guide: https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf)
-- Install (Microsoft VS Code)[https://code.visualstudio.com/] (This is preferable to VSCodium because the easiest way to read data from the Pico over USB is the Microsoft VS Code Serial Monitor extension, which doesn't work with VSCodium)
-- Install the official (Raspberry Pi Pico Visual Studio Code extension)[https://marketplace.visualstudio.com/items?itemName=raspberry-pi.raspberry-pi-pico]
+- Install [Microsoft VS Code](https://code.visualstudio.com/) (This is preferable to VSCodium because the easiest way to read data from the Pico over USB is the Microsoft VS Code Serial Monitor extension, which doesn't work with VSCodium)
+- Install the official [Raspberry Pi Pico Visual Studio Code extension](https://marketplace.visualstudio.com/items?itemName=raspberry-pi.raspberry-pi-pico)
 - Open the `firmware` folder in VS Code. The Pi Pico extension should automatically detect this as a Pico project, and enable several commands under its quick access menu (click the extension icon on the Activity Bar, then under "Project" should be "Debug Project", "Compile Project", "Run Project (USB)", etc).
 - Use the following commands:
   - "Compile Project" will compile (only) the software and put the compiled executables in a `build` subfolder, but note that "Configure CMake" must be run first.
