@@ -1,3 +1,11 @@
+# This is a makefile when building this software via command line on Linux.
+# Not used when using the Raspbbery Pi Pico VS Code extension.
+#
+# Commonly used commands:
+# - "make build" to compile only
+# - "make reload" to load onto Pico in USB mode
+# - "make" or "make all" to do both
+
 # by default, compile (if need be) then upload and start program
 all: build-then-reload
 

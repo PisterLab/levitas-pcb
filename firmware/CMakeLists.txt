@@ -1,11 +1,37 @@
-# NOTE:
-# This file must be manually changed to include new source files
-# (via add_executable) and imports (via target_link_libraries)
+# This is the main compiler configuration file for this project.
+# This is used both when building via Linux command line or the
+# Raspberry Pi Pico VS Code extension on Windows.
+#
+# See the Raspberry Pi Pico API documentation for details.
+#
+# Important notes:
+#
+# - This file must be manually changed to include new source files
+#   (via add_executable) and imports (via target_link_libraries).
+#   (If using VS Code, you must run "Configure CMake" after this.)
+#
+# - The one following section is necessary for VS Code:
+
+# == DO NOT EDIT THE FOLLOWING LINES for the Raspberry Pi Pico VS Code Extension to work ==
+if(WIN32)
+    set(USERHOME $ENV{USERPROFILE})
+else()
+    set(USERHOME $ENV{HOME})
+endif()
+set(sdkVersion 2.0.0)
+set(toolchainVersion 13_2_Rel1)
+set(picotoolVersion 2.0.0)
+set(picoVscode ${USERHOME}/.pico-sdk/cmake/pico-vscode.cmake)
+if (EXISTS ${picoVscode})
+    include(${picoVscode})
+endif()
+# ====================================================================================
+
+# All lines below this can be manually configured.
 
 cmake_minimum_required(VERSION 3.13)
 
-# explicitly use the RP2040 on pico dev board
-# (even though this is the default)
+# explicitly use the RP2350 on pico 2 dev board
 set(PICO_BOARD pico2)
 set(PICO_PLATFORM rp2350)
 
@@ -53,10 +79,10 @@ target_link_libraries(levitas
     pico_time
 )
 
-# UART on pins 0/1 is enabled by default, disable it
+# UART on pins 0/1 is enabled by default. Disable it.
 pico_enable_stdio_uart(levitas 0)
 
-# enable USB virtual serial port
+# Enable USB virtual serial port.
 # (i.e., appear as a serial port when plugged in over USB, use w/ printf)
 # (this is equivalent to including pico_stdio_usb)
 # (includes functionality to reset over USB)
