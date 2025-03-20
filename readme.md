@@ -16,6 +16,8 @@ This project uses the Raspberry Pi RP2350 microcontroller, which is mounted to a
 
 Programming the RP2350 microcontroller is officially supported in C++ or MicroPython. We use C++ to more easily write programs that satisfy tight timing constraints (e.g., making a control loop as fast as possible). See the Documentation section below for links to the official documentation.
 
+Note we're specifically using the 2.0.0 version of the SDK. Updating this requires updating the pico-sdk subfolder, every mention of the SDK version in other configuration files, and the version of the picotool utility used to upload the software.
+
 ## Documentation
 
 https://www.raspberrypi.com/documentation/microcontrollers/
@@ -75,9 +77,16 @@ On Linux:
 - follow Pico SDK README instructions
 
 On Windows:
-- follow getting started guide: https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf
-- install VSCode or VSCodium
-- install the official (Raspberry Pi Pico Visual Studio Code extension)[https://marketplace.visualstudio.com/items?itemName=raspberry-pi.raspberry-pi-pico]
+- (follow getting started guide: https://datasheets.raspberrypi.com/pico/getting-started-with-pico.pdf)
+- Install (Microsoft VS Code)[https://code.visualstudio.com/] (This is preferable to VSCodium because the easiest way to read data from the Pico over USB is the Microsoft VS Code Serial Monitor extension, which doesn't work with VSCodium)
+- Install the official (Raspberry Pi Pico Visual Studio Code extension)[https://marketplace.visualstudio.com/items?itemName=raspberry-pi.raspberry-pi-pico]
+- Open the `firmware` folder in VS Code. The Pi Pico extension should automatically detect this as a Pico project, and enable several commands under its quick access menu (click the extension icon on the Activity Bar, then under "Project" should be "Debug Project", "Compile Project", "Run Project (USB)", etc).
+- Use the following commands:
+  - "Compile Project" will compile (only) the software and put the compiled executables in a `build` subfolder, but note that "Configure CMake" must be run first.
+  - "Configure CMake" will create a `build` subfolder and prepare the compilation based on configuration information in the `CMakeLists.txt` file. This is run automatically when the folder is opened in VS Code if recognized by the Pico extension. WARNING: THIS MUST BE MANUALLY RE-RUN EVERY TIME YOU CHANGE `CMakeLists.txt`!
+  - "Run Project (USB)" will load the program onto a Rasberry Pi Pico 2 board connected over USB (specifically, by running the `picotool` command line utility). If the Pico is in BOOTSEL mode (achieved by holding down the BOOTSEL button before plugging in USB) it will probably work immediately. If not, uploading can still work if USB communication was enabled on the already-running Pico program (which it is for this software, as per `CMakeLists.txt`), though you might need to press "Run Project (USB)" twice.
+  - "Debug Project" and "Flash Project (SWD)" do not work without use of the Raspberry Pi Debug Probe (which we don't have).
+- To see data the Pico is sending over USB, open the "SERIAL MONITOR" tab on the lower VS Code panel that also has "TERMINAL", "DEBUG CONSOLE", etc., set to 115200 baud and the correct COM port.
 
 ## Notes
 
