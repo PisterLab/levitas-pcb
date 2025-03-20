@@ -86,7 +86,7 @@ On Windows:
   - "Configure CMake" will create a `build` subfolder and prepare the compilation based on configuration information in the `CMakeLists.txt` file. This is run automatically when the folder is opened in VS Code if recognized by the Pico extension. WARNING: THIS MUST BE MANUALLY RE-RUN EVERY TIME YOU CHANGE `CMakeLists.txt`!
   - "Run Project (USB)" will load the program onto a Rasberry Pi Pico 2 board connected over USB (specifically, by running the `picotool` command line utility). If the Pico is in BOOTSEL mode (achieved by holding down the BOOTSEL button before plugging in USB) it will probably work immediately. If not, uploading can still work if USB communication was enabled on the already-running Pico program (which it is for this software, as per `CMakeLists.txt`), though you might need to press "Run Project (USB)" twice.
   - "Debug Project" and "Flash Project (SWD)" do not work without use of the Raspberry Pi Debug Probe (which we don't have).
-- To see data the Pico is sending over USB, open the "SERIAL MONITOR" tab on the lower VS Code panel that also has "TERMINAL", "DEBUG CONSOLE", etc., set to 115200 baud and the correct COM port.
+- To see data the Pico is sending over USB, open the "SERIAL MONITOR" tab on the lower VS Code panel that also has "TERMINAL", "DEBUG CONSOLE", etc., set to 115200 baud and the correct COM port. Note this requires `pico_enable_stdio_usb(levitas 1)` to be set in `CMakeLists.txt` and `stdio_init_all();` to be called in `main.c` (which they are).
 
 ## Notes
 
