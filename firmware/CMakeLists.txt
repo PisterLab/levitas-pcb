@@ -35,8 +35,12 @@ cmake_minimum_required(VERSION 3.13)
 set(PICO_BOARD pico2)
 set(PICO_PLATFORM rp2350)
 
-# initialize pico-sdk from submodule
-# this must happen before project()
+# Use the specific version of the pico SDK (2.0.0) that we've
+# put into this git repo (instead of using one stored externally).
+# (the alternative is using pico_sdk_import.cmake to automatically
+# find the pico SDK folder, but we chose not to do that)
+# This is mainly for long-term stability.
+# (note: this must happen before project())
 include(pico-sdk/pico_sdk_init.cmake)
 
 # define project name
