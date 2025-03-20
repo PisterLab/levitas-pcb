@@ -46,6 +46,11 @@ typedef struct {
     int16_t data1;
     int16_t data2;
     int16_t data3;
+    // store four voltages
+    float hv0;
+    float hv1;
+    float hv2;
+    float hv3;
 } levitation_state_t;
 queue_t data_queue;
 
@@ -175,10 +180,12 @@ static void fdc2112_startup(PIO pio, uint sm){
     //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0000); // 0-bit shift
     //fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0400); // 3-bit shift
     fdc2112_write_register(pio, sm, FDC2112_REG_RESET_DEV, 0x0600); // 4-bit shift
+    //
     // offset:
+    // also add an offset value in order to fit data within the bits that we're sending back
     // (see manual page 27)
     //fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x0000); // no offset
-    fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x1800);
+    fdc2112_write_register(pio, sm, FDC2112_REG_OFFSET_CH0, 0x1800); // set offset=0x1800
 
     // ===== Drive current =====
     //
@@ -302,6 +309,9 @@ void HVAWG_write_count(uint val1, uint val2, uint val3, uint val4){
         // CODEn = 00000100 11111111 11110000 = 0x04fff0
         // CODEn_LOAD_ALL = 00101000 11111111 11110000 = 0x28fff0
 
+        // WARNING: SENSORS SDA1,2,3,4 CORRESPOND TO HIGH VOLTAGE
+        // OUTPUTS HV4,3,2,1 on PCB (NUMBERS ARE BACKWARD) (AND DAC
+        // SPI ALSO HAS DIFFERENT WIRING).
         // Note that DAC channel 1,2,3,4 are labelled on the PCB
         // as high voltage outputs 4,3,2,1. Write the following data
         // such that HVAWG_write_count(10,0,0,0) will write a high
@@ -361,32 +371,71 @@ void HVAWG_write_voltage(float V1, float V2, float V3, float V4){
 // ===========================================================================
 // (This section contains the main function.)
 
-// Print to USB with second core
-// This means printing won't take time away from the main sensor read loop
-// (though it still adds a little bit of jitter, visible via oscilloscope)
+// We'll run this function on the second microcontroller core.
+// It will simply, in an infinite loop, print data values out over USB serial.
+// - This helps because printing over USB takes time (maybe 20us per printf)
+// - If we put this in the main sensor read loop it would mess with the timing
+// - So put it in the second core instead
+// - (though it still adds a little bit of jitter to the main loop somehow,
+//    as determined by measuring I2C and high voltage on oscilloscope,
+//    possibly due to passing data between cores, but the jitter is small
+//    enough to be manageable)
 void core2_main(){
-    //printf("time(us) cap1 cap2 cap3 cap4\n");
     while(true){
+        // get data from main core
         levitation_state_t datapoint;
         queue_remove_blocking(&data_queue, &datapoint);
-        printf("%llu 0x%04x 0x%04x 0x%04x 0x%04x\n", to_us_since_boot(get_absolute_time()), datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3);
+        // and print to USB:
+        // - microseconds of time since program started,
+        // - (4x) capacitance sensor data values (as a hexadecimal integer)
+        //       (roughly speaking, higher values = lower capacitance,
+        //        but the exact correlation between data value and capacitance
+        //        is inexact and somewhat unknown due to large variances in
+        //        part tolerances (FDC2112 oscillator frequency, and the
+        //        tolerance of the capacitor and inductor in the circuit) as well
+        //        as FDC2112 sensor drift (the values sometimes change slightly
+        //        over time for an unknown reason)
+        // - (4x) high voltage that microcontroller thinks it is applying
+        //       (note actual value, measured via oscilloscope, might be
+        //        slightly different because of rise times, power supply
+        //        max current limits, etc; it's good to check)
+        // WARNING: SENSORS SDA1,2,3,4 CORRESPOND TO HIGH VOLTAGE
+        // OUTPUTS HV4,3,2,1 on PCB (NUMBERS ARE BACKWARD) (AND DAC
+        // SPI ALSO HAS DIFFERENT WIRING).
+        printf("%llu 0x%04x 0x%04x 0x%04x 0x%04x %f %f %f %f\n", to_us_since_boot(get_absolute_time()), datapoint.data0, datapoint.data1, datapoint.data2, datapoint.data3, datapoint.hv0, datapoint.hv1, datapoint.hv2, datapoint.hv3);
     }
 }
 
+// This is the starting point of the entire program,
+// and runs on the main microcontroller core.
+// - starts second core to print data
+// - initializes FDC2112 capacitance sensors
+// - initialize MAX5715 DAC for high voltage output
+// - then runs main loop
+//   - read from capacitance sensors
+//   - optionally set high voltage
+//   - send data to second core to be printed with USB
+//   - try to run at a fixed frequency
 int main() {
 
-    // enable all available stdio outputs
-    // (currently only USB in CMakeLists.txt)
+    // Enable printing to whichever outputs are enabled in CMakeLists.txt
+    // (currently only USB over serial)
+    // (print by calling printf function)
     // USB serial port defaults to 115200 baud
     stdio_init_all();
 
-    // launch second core
-    // queue holds at most 2 data points
-    // (will use this to send data over USB without affecting (much) timing of main sensor readings)
+    // Launch second microcontroller core, which will print data over USB.
+    // We'll use a queue datastructure to transfer data between the main
+    // and second microcontroller cores: the main core puts data into the
+    // queue, and the second core takes it out.
+    // The queue doesn't need to be big (here we have it only hold 2 things
+    // at once to avoid unexpected delays if something weird happens); it's
+    // only necessary as a thread-safe way to share data.
     queue_init(&data_queue, sizeof(levitation_state_t), 2);
     multicore_launch_core1(core2_main);
 
-    // set up LED (in case we want to do anything with it)
+    // set up LED
+    // (in case we want to do anything with it, though right now we don't)
     gpio_init(PICO_DEFAULT_LED_PIN);
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
@@ -401,17 +450,23 @@ int main() {
     pio_i2c_program_init(pio, sm1, offset, 6, 7); // start PIO state machine at given instruction offset with given SDA and SCL pin
     pio_i2c_program_init(pio, sm2, offset, 8, 9); // start PIO state machine at given instruction offset with given SDA and SCL pin
     pio_i2c_program_init(pio, sm3, offset, 10, 11); // start PIO state machine at given instruction offset with given SDA and SCL pin
-    // wait just in case fdc2112 sensors need to initialize
+    // wait a bit just in case fdc2112 sensors need time to initialize
     sleep_ms(500);
+    // send configuration information to sensor
     fdc2112_startup(pio, sm0);
     fdc2112_startup(pio, sm1);
     fdc2112_startup(pio, sm2);
     fdc2112_startup(pio, sm3);
+    // we'll use this array to store data we read from the sensors
     uint16_t result[] = {0x00, 0x00, 0x00, 0x00};
-    // make a first reading explicitly identifying the chip registers
-    // we want to read from in the future. Afterward, we can use the
-    // faster read_register_nowrite function which will just read the
-    // same data we get here.
+    // Make a first reading from the sensors using fdc2112_read_register_4().
+    // This is necessary because reading data from the sensors requires:
+    //   1. Telling sensor which of its data we want to read (specify register)
+    //   2. Actually reading data
+    // Later, in the main loop, we'll only do (2) and ignore (1) in order to
+    // read data more quickly (via the read_register_nowrite() function).
+    // However, we still need to do (1) at some point before that. This
+    // function call does both (1) and (2).
     fdc2112_read_register_4(pio, sm0, sm1, sm2, sm3, FDC2112_REG_DATA_CH0, result);
 
     // set up MAX5715 DAC
@@ -420,40 +475,114 @@ int main() {
     gpio_set_function(HVAWG_MOSI_PIN, GPIO_FUNC_SPI);
     gpio_init(HVAWG_CS_PIN);
     gpio_set_dir(HVAWG_CS_PIN, GPIO_OUT);
-    gpio_put(HVAWG_CS_PIN, 0); // active low
-    // wait at least 200us for DAC to initialize
-    sleep_ms(250);
-    HVAWG_reset();
-    HVAWG_write_voltage(0,0,0,0); // start by applying this voltage
+    gpio_put(HVAWG_CS_PIN, 0); // enable MAX5715 SPI (its CS pin is active low)
+    sleep_ms(250); // wait at least 200us for DAC to initialize
+    HVAWG_reset(); // send configuration information
+    // start by applying this voltage
+    HVAWG_write_voltage(0,0,0,0);
 
-    // start main loop
-    const uint64_t LOOP_TIME_US = 150; // try to loop this long on average
+    // We'll use these variables to keep main loop running
+    // at a fixed frequency (determined by LOOP_TIME_US).
+    // WARNING: THE MINIMUM LOOP TIME IS FIXED BY CAPACITIVE SENSOR
+    // READS AND HIGH VOLTAGE OUTPUTS. SETTING A LOWER LOOP TIME HERE
+    // WON'T DO ANYTHING. CONFIRM IT'S ACTUALLY WORKING VIA
+    // OSCILLOSCOPE (E.G., ON I2C SDA PINS).
+    const uint64_t LOOP_TIME_US = 150; // try to make loop this long on average
     absolute_time_t loop_start_time = get_absolute_time();
+
+    // Some variables to keep track of what we've set the
+    // high voltage to and how often to update it
+    float hv0 = 0;
+    float hv1 = 0;
+    float hv2 = 0;
+    float hv3 = 0;
+    bool high = false;
+    absolute_time_t hv_start_time = get_absolute_time();
+
+    // Some variables to compare hardcoded capacitance values to
+    // known min/max capacitance values to estimate position
+    // WARNING: THESE TEND TO DRIFT OVER TIME AND NEED RECALIBRATION
+    uint16_t top_values[] = {0x0572, 0x06dd, 0x06ce, 0x064a};
+    uint16_t bottom_values[] = {0x04f2, 0x0665, 0x066c, 0x05ce};
+    uint16_t middle_values[] = {0,0,0,0};
+    for(int i=0; i<4; i++){
+        middle_values[i] = (top_values[i]+bottom_values[i])/2;
+    }
+    uint16_t oldresult[] = {0x00, 0x00, 0x00, 0x00};
+
     while(true){
 
-        /*
-        sleep_ms(10);
-        HVAWG_write_voltage(0,0,0,0);
-        sleep_ms(30);
-        HVAWG_write_voltage(225,225,225,225);
-        */
-
-
-
+        // ===== in case you want to blink LEDs =====
         //gpio_put(PICO_DEFAULT_LED_PIN, true);
         //gpio_put(PICO_DEFAULT_LED_PIN, false);
 
+        // ===== read capacitance sensors =====
+        // WARNING: SENSORS SDA1,2,3,4 CORRESPOND TO HIGH VOLTAGE
+        // OUTPUTS HV4,3,2,1 on PCB (NUMBERS ARE BACKWARD) (AND DAC
+        // SPI ALSO HAS DIFFERENT WIRING).
         // read quickly from the chip registers
+        for(int i=0; i<4; i++){oldresult[i] = result[i];}
         fdc2112_read_register_nowrite_4(pio, sm0, sm1, sm2, sm3, result);
+        // discard 0x0fff values
+        for(int i=0; i<4; i++){
+            //if(result[i] == 0x0fff){result[i] = oldresult[i];}
+            if(result[i] > 0x07d0){result[i] = oldresult[i];}
+        }
 
-        // TODO: CONFIRM CAPACITANCE SENSORS ARE IN CORRECT ORDER
-        // (OR REARRANGE THEM TO MATCH PCB)
+        // =============================
+        // ===== High voltage code =====
+        // =============================
+        // Uncomment only one of #1, #2, #3
+
+        // ===== output high voltage #1: do nothing =====
+        // keep voltage at 0.
+        HVAWG_write_voltage(0,0,0,0);
+
+        // ===== output high voltage #2: square wave =====
+        // enable then disable high voltage slowly.
+        // useful for testing whether movement works at all.
+        /*
+        absolute_time_t hv_now_time = get_absolute_time();
+        if(hv_now_time > delayed_by_ms(hv_start_time, 1000)){
+            high = !high;
+            hv0 = high?240:0;
+            hv1 = high?240:0;
+            hv2 = high?240:0;
+            hv3 = high?240:0;
+            HVAWG_write_voltage(hv0,hv1,hv2,hv3);
+            gpio_put(PICO_DEFAULT_LED_PIN, high); // also blink LED
+            hv_start_time = hv_now_time;
+        }
+        */
+
+        // ===== output high voltage #3: bang-bang controller=====
+        // WARNING: REQUIRES HARDCODED MIN/MAX CAPACITANCE VALUES (SEE EARLIER
+        // CODE ABOVE), WHICH NEED TO BE RECALIBRATED FREQUENTLY
+        // naive bang-bang controller to try to keep rotor levitated in middle
+        // todo: improve this (doesn't even have hysterisis so switching speed is too fast!)
+        /*
+        uint32_t sum_current = result[0]+result[1]+result[2]+result[3];
+        uint32_t sum_middle = middle_values[0]+middle_values[1]+middle_values[2]+middle_values[3];
+        if(sum_current > sum_middle){ // cap sensors return a high value, which means capacitance is low, which means rotor is close to stator electrodes
+            hv0 = 240;
+            hv1 = 240;
+            hv2 = 240;
+            hv3 = 240;
+        }else{ // rotor is closer to capacitive sensors
+            hv0 = 0;
+            hv1 = 0;
+            hv2 = 0;
+            hv3 = 0;
+        }
+        HVAWG_write_voltage(hv0,hv1,hv2,hv3);
+        */
 
         // send data to second core for printing
-        levitation_state_t entry = {result[0], result[1], result[2], result[3]};
-        // NOTE: THIS CAUSES SIGNIFICANT (maybe ~20us) TIMING JITTER
+        levitation_state_t entry = {result[0], result[1], result[2], result[3], hv0, hv1, hv2, hv3};
+        // note: this causes significant (maybe ~20us) timing jitter
         queue_try_add(&data_queue, &entry); // nonblocking
 
+        // ===== TIMING: DO NOT EDIT THIS SECTION =====
         // Loop length will vary slightly due to multicore communication,
         // so keep a timer to try to control average loop time, making each
         // loop slightly longer or shorter as necessary.
@@ -466,6 +595,7 @@ int main() {
             loop_start_time = now_time;
         }
         sleep_until(loop_start_time); // takes absolute_time_t
+        // ===== END TIMING SECTION =====
     }
 
     return 0;
