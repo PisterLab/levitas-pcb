@@ -1,4 +1,4 @@
-24735605853036833
+24744321788555055
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -99511,3 +99511,38 @@ Varistor VF
 0
 2
 2
+external-libs
+wirebondarray-1x20-emtan
+
+
+0
+20
+20
+external-libs
+wirebondarray-dteal
+
+
+0
+10
+10
+levitas_local
+PinHeader_1x16_P2.54mm_Vertical
+Through hole straight pin header, 1x16, 2.54mm pitch, single row
+Through hole pin header THT 1x16 2.54mm single row
+0
+16
+16
+levitas_local
+WSON-12-1EP_4x4mm_P0.5mm_EP2.6x3mm
+WSON, 12 Pin (http://www.ti.com/lit/ds/symlink/ldc1312.pdf#page=62), generated with kicad-footprint-generator ipc_noLead_generator.py
+WSON NoLead
+0
+17
+13
+levitas_local
+cap_sensor
+
+
+0
+1
+1
